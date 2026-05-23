@@ -2,6 +2,7 @@
 import ast
 import httpx
 import json
+import re
 from sqlmodel import select
 from datetime import datetime
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -50,48 +51,71 @@ TASK_PROMPT = """Ты — персональный репетитор по Pytho
   "explanation": "Краткое пояснение концепции"
 }}"""
 
-VERIFY_PROMPT = """Ты проверяешь ЛОГИКУ кода на Python. Синтаксис уже проверен и ВЕРЕН.
+VERIFY_PROMPT = """ТВОЯ ЕДИНСТВЕННАЯ ЗАДАЧА: проверить ЛОГИКУ решения, а не синтаксис!
+
+КРИТИЧЕСКИ ВАЖНО:
+Синтаксис УЖЕ проверен и корректен. НЕ ПРОВЕРЯЙ синтаксические детали!
+
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ОТВЕРГАТЬ КОД ИЗ-ЗА:
+1. КАВЫЧКИ — 'text' И "text" АБСОЛЮТНО ЭКВИВАЛЕНТНЫ В PYTHON!
+   ✅ print('Hello') = print("Hello") — ОДИНАКОВО ВЕРНО
+   ✅ name = "John" = name = 'John' — РАЗНИЦЫ НЕТ
+
+2. ПРОБЕЛЫ И ОТСТУПЫ:
+   print(x,y) = print(x, y) = print( x , y )
+
+3. ИМЕНА ПЕРЕМЕННЫХ:
+   x = 5 = a = 5 = my_var = 5
+
+ПРОВЕРЯЙ ТОЛЬКО ЛОГИКУ:
+1. Использует ли код НУЖНЫЕ функции (print, input и т.д.)?
+2. Правильная ли АЛГОРИТМИЧЕСКАЯ логика?
+3. Даст ли код ПРАВИЛЬНЫЙ РЕЗУЛЬТАТ при выполнении?
 
 ЗАДАНИЕ:
 {question}
 
-ОЖИДАЕМЫЙ ОТВЕТ:
+ОЖИДАЕМЫЙ ОТВЕТ (для понимания логики, не для сравнения синтаксиса!):
 {expected_answer}
 
 ОТВЕТ СТУДЕНТА:
 {student_answer}
 
-ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON:
+📤 ОТВЕТЬ СТРОГО В JSON ФОРМАТЕ:
 {{
   "is_correct": true/false,
-  "explanation": "Краткое объяснение на русском",
-  "weakness": "конкретная концепция ИЛИ 'none'"
+  "explanation": "Краткое объяснение на русском. Если неправильно — объясни ЧТО НЕ ТАК С ЛОГИКОЙ, не с синтаксисом!",
+  "weakness": "конкретная_концепция ИЛИ 'none'"
 }}
 
-✅ ПРИНИМАЙ КАК ПРАВИЛЬНЫЙ, ЕСЛИ:
-- Логика соответствует заданию
-- Синтаксис корректный
+ПРИМЕРЫ ПРОВЕРКИ:
 
-🚫 СТРОГО ЗАПРЕЩЕНО ПРОВЕРЯТЬ:
-- Типы кавычек: 'text' = "text" — ОБА ВЕРНЫ!
-- Пробелы: print(x,y,z) = print(x, y, z)
-- Имена переменных: x, a, my_var — ВСЁ ОК
+ПРИМЕР 1:
+Задание: "Выведите 'Учимся программировать на Python!'"
+Эталон: print('Учимся программировать на Python!')
+Студент: print("Учимся программировать на Python")
+is_correct: true
+explanation: "Код верный! Использует print() правильно."
+weakness: "none"
 
-ПРИМЕРЫ:
-Задание: "Выведите 'Hello'"
-Эталон: "print('Hello')"
-Студент: "print("Hello")"
-Вердикт: is_correct: true (кавычки не важны!)
+ПРИМЕР 2:
+Задание: "Сложите два числа"
+Эталон: print(a + b)
+Студент: print(b + a)
+is_correct: true
+explanation: "Логика верная, сложение коммутативно."
+weakness: "none"
 
-Задание: "Создайте переменную"
-Эталон: "x = 5"
-Студент: "a = 5"
-Вердикт: is_correct: true (имя не важно)
+ПРИМЕР 3:
+Задание: "Выведите Hello"
+Эталон: print('Hello')
+Студент: input('Hello')
+is_correct: false
+explanation: "Нужно использовать print(), а не input()"
+weakness: "wrong_function"
 
-Если ответ правильный → weakness: "none"
-Если неправильный → weakness: "logic_error" или "missing_function" и т.д.
-
-Проверь ответ:"""
+ПРОВЕРЬ КОД СТУДЕНТА (игнорируя кавычки и пробелы!):
+"""
 
 
 # 🔹 Функция выбора этапа (ВНЕ класса, с НУЛЕВЫМ отступом!)
@@ -285,9 +309,43 @@ class TaskGenerationService:
         except:
             return False
 
+    @staticmethod
+    def _normalize_python_code(code: str) -> str:
+        """
+        Минимальная безопасная нормализация кода.
+        НЕ меняет структуру — только косметические различия.
+        """
+        if not code or not code.strip():
+            return code
+
+        # 1. Табы → 4 пробела
+        code = code.replace('\t', '    ')
+
+        # 2. Убираем BOM и лишние переносы в начале/конце
+        code = code.strip()
+
+        # 3. Нормализуем пустые строки (не более 2 подряд)
+        code = re.sub(r'\n\s*\n\s*\n', '\n\n', code)
+
+        # 4. Убираем пробелы перед запятыми/точкой с запятой
+        code = re.sub(r'\s+,', ',', code)
+        code = re.sub(r'\s+;', ';', code)
+
+        # 5. Нормализуем пробелы вокруг операторов (опционально)
+        # code = re.sub(r'\s*=\s*', ' = ', code)  # осторожно: может сломать ==
+
+        # 6. Гарантируем перенос в конце
+        if not code.endswith('\n'):
+            code += '\n'
+
+        return code
+
     async def verify_student_answer(self, question: str, expected_answer: str, student_answer: str) -> dict:
-        # 1. Проверяем синтаксис
-        if not self.is_valid_python_syntax(student_answer):
+        # 🔹 0. НОРМАЛИЗУЕМ код студента (кавычки, пробелы, отступы)
+        normalized_student_code = self._normalize_python_code(student_answer)
+
+        # 1. Проверяем синтаксис нормализованного кода
+        if not self.is_valid_python_syntax(normalized_student_code):
             return {
                 "is_correct": False,
                 "explanation": "❌ Синтаксическая ошибка. Проверьте скобки, отступы, двоеточия.",
@@ -295,7 +353,7 @@ class TaskGenerationService:
             }
 
         # 🔹 2. Проверяем, что это ОСМЫСЛЕННЫЙ код
-        if not self.is_meaningful_code(student_answer):
+        if not self.is_meaningful_code(normalized_student_code):
             return {
                 "is_correct": False,
                 "explanation": "⚠️ Это не программа. Напишите код с использованием функций (input, print) и логики (if, переменные).",
@@ -306,14 +364,14 @@ class TaskGenerationService:
         prompt = VERIFY_PROMPT.format(
             question=question,
             expected_answer=expected_answer,
-            student_answer=student_answer
+            student_answer=normalized_student_code
         )
 
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 "http://localhost:11434/api/generate",
                 json={
-                    "model": "qwen2.5:3b",
+                    "model": "qwen2.5:7b",
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",

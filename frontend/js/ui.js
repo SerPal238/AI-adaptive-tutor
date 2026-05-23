@@ -78,7 +78,7 @@ export function renderStats(rawData) {
 /**
  * Отрисовать карту знаний
  */
-export function renderTopics(topics, masteredTopics, unlockedTopics, onSelect) {
+export function renderTopics(topics, masteredTopics, unlockedTopics, masteryScores = {}, onSelect) {
     const container = document.getElementById('topics-container');
     container.innerHTML = '';
 
@@ -99,13 +99,22 @@ export function renderTopics(topics, masteredTopics, unlockedTopics, onSelect) {
         btn.setAttribute('role', 'listitem');
         btn.setAttribute('aria-label', `${title} ${isMastered ? '(изучено)' : isUnlocked ? '(доступно)' : '(заблокировано)'}`);
 
+        // 🔹 Вычисляем прогресс для визуализации
+        const masteryScore = masteryScores[topicId] ?? 0;
+        const progressPercent = Math.round(masteryScore * 100);
+
         btn.innerHTML = `
             <span class="topic-card__icon" aria-hidden="true">
                 ${isMastered ? '✅' : isUnlocked ? '🔓' : '🔒'}
             </span>
             <span class="topic-card__title">${title}</span>
+            
+            <!-- 🔹 ПРОГРЕСС-БАР ТЕМЫ -->
+            <div class="topic-card__progress" aria-hidden="true">
+                <div class="topic-card__progress-fill" style="width: ${progressPercent}%"></div>
+            </div>
+            <span class="topic-card__progress-text">${progressPercent}%</span>
         `;
-
         if (isUnlocked && !isMastered) {
             // 🔹 СОБИРАЕМ ПОЛНЫЙ ОБЪЕКТ ТЕМЫ
             const topicObject = {

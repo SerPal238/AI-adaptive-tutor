@@ -102,8 +102,8 @@ async def analyze_answer(
         mastery_record.identified_weaknesses = []
         mastery_record.correct_streak = 0  # Сброс счётчика после очистки
 
-    was_mastered = new_mastery >= 0.9
-    unlocked_new = was_mastered and current_mastery < 0.9
+    was_mastered = new_mastery >= 1.0
+    unlocked_new = was_mastered and current_mastery < 1.0
 
     await session.commit()
     await session.refresh(mastery_record)
@@ -164,10 +164,10 @@ async def generate_content(session: AsyncSession, student_id: int, topic_id: int
 # 🔹 verify_access → async (интеграция с графом)
 # ─────────────────────────────────────────────────────────────
 async def verify_access(session: AsyncSession, student_id: int, topic_id: int) -> dict:
-    # Получаем все темы, где mastery >= 0.9 (изученные)
+    # Получаем все темы, где mastery >= 1.0 (изученные)
     stmt = select(TopicMastery.topic_id).where(
         TopicMastery.student_id == student_id,
-        TopicMastery.mastery_level >= 0.9
+        TopicMastery.mastery_level >= 1.0
     )
     result = await session.exec(stmt)
     mastered_ids = set(r for r in result.all())
@@ -197,8 +197,8 @@ async def get_student_full_status(session: AsyncSession, student_id: int) -> dic
     mastery_results = await session.exec(stmt)
     mastery_scores = {m.topic_id: round(m.mastery_level, 2) for m in mastery_results.all()}
 
-    # Вычисляем изученные темы (mastery >= 0.9)
-    mastered_topics = [tid for tid, score in mastery_scores.items() if score >= 0.9]
+    # Вычисляем изученные темы (mastery >= 1.0)
+    mastered_topics = [tid for tid, score in mastery_scores.items() if score >= 1.0]
 
     # Получаем доступные через граф
     unlocked = graph_manager.get_unlocked_topics(set(mastered_topics))

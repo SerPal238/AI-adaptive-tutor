@@ -89,7 +89,8 @@ async function loadStudentData() {
         const masteredTopics = data.mastered_topics || [];
         const unlockedTopics = data.unlocked_topics || [];
 
-        UI.renderTopics(topicsData, masteredTopics, unlockedTopics, handleTopicSelect);
+        const masteryScores = data.mastery_scores || {};
+        UI.renderTopics(topicsData, masteredTopics, unlockedTopics, masteryScores, handleTopicSelect);
 
         return data;
     } catch (error) {
@@ -127,14 +128,15 @@ async function handleTopicSelect(topic) {
     try {
         const data = await API.getStudent(state.studentId);
 
-        // Находим mastery для выбранной темы
-        const masteryData = data.mastery_levels?.find(m => m.topic_id === topicId);
-        const masteryLevel = masteryData?.mastery_level || 0.0;
+        // 🔥 ЧИТАЕМ mastery_scores (объект, а не массив!)
+        const masteryScores = data.mastery_scores || {};
+        const masteryLevel = masteryScores[String(topicId)] ?? 0.0;
 
-        // Обновляем отображение mastery
+        // Обновляем отображение mastery (в процентах!)
         const masteryEl = document.getElementById('task-mastery');
         if (masteryEl) {
-            masteryEl.textContent = `Mastery: ${masteryLevel.toFixed(2)}`;
+            const masteryPercent = Math.round(masteryLevel * 100);
+            masteryEl.textContent = `Уровень освоения: ${masteryPercent}%`;
         }
     } catch (error) {
         console.error('Ошибка загрузки mastery:', error);
@@ -255,7 +257,10 @@ async function handleCheckAnswer() {
         if (newMastery !== undefined) {
             console.log(`🎯 Mastery обновлён бэкендом: ${newMastery}`);
             const masteryEl = document.getElementById('task-mastery');
-            if (masteryEl) masteryEl.textContent = `Mastery: ${newMastery.toFixed(2)}`;
+            if (masteryEl) {
+                const masteryPercent = Math.round(newMastery * 100);
+                masteryEl.textContent = `Уровень освоения: ${masteryPercent}%`;
+            }
         }
 
         // 🔹 Показываем фидбек (с эталонным ответом при ошибке)
@@ -373,7 +378,8 @@ async function handleExplainRequest() {
         if (explanation.new_mastery !== undefined) {
             const masteryEl = document.getElementById('task-mastery');
             if (masteryEl) {
-                masteryEl.textContent = `Mastery: ${explanation.new_mastery.toFixed(2)}`;
+                const masteryPercent = Math.round(explanation.new_mastery * 100);
+                masteryEl.textContent = `Уровень освоения: ${masteryPercent}%`;
             }
         }
 

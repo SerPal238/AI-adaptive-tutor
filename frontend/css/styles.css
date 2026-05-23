@@ -267,18 +267,10 @@ body {
     margin-bottom: var(--spacing-md);
     font-size: 0.9em;
 }
-
-.task-meta__difficulty {
-    background: #e3f2fd;
-    color: var(--color-primary);
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
 .task-meta__mastery {
     color: var(--color-text-secondary);
+    white-space: nowrap;
+    font-size: 0.85em;
 }
 
 .task-question {
@@ -646,4 +638,33 @@ body {
     font-size: 0.9em;
     line-height: 1.6;
     border: none;
+}
+
+/* 🔹 Прогресс-бар на карточке темы */
+.topic-card__progress {
+    height: 4px;
+    background: var(--color-border);
+    border-radius: 2px;
+    margin: 8px 0 4px;
+    overflow: hidden;
+    width: 100%;
+}
+
+.topic-card__progress-fill {
+    height: 100%;
+    background: var(--color-primary);
+    transition: width 0.3s ease;
+    border-radius: 2px;
+}
+
+.topic-card--mastered .topic-card__progress-fill {
+    background: var(--color-success);
+}
+
+.topic-card__progress-text {
+    display: block;
+    font-size: 0.75em;
+    color: var(--color-text-secondary);
+    text-align: center;
+    margin-top: 2px;
 }

@@ -4,6 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from services.task_service import TaskGenerationService
+from services.adaptation import get_or_create_mastery
 from sqlmodel import select
 from db.models import GeneratedTask
 import json
@@ -74,11 +75,18 @@ async def get_status(student_id: int, session: AsyncSession = Depends(get_sessio
     # Авто-создание студента, если нет в БД
     await get_or_create_student(session, student_id)
 
+
+
     # Получаем полный статус через сервис
     status = await get_student_full_status(session, student_id)
     if not status:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    unlocked = status.get("unlocked_topics", [])
+    for topic_id in unlocked:
+        await get_or_create_mastery(session, student_id, topic_id)
+
+    await session.commit()
     # 🔹 ДОБАВЬ: Возвращаем граф знаний
     return {
         **status,

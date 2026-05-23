@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+networkx
+pydantic
+httpx==0.28.1
+uvicorn main:app --reload
+streamlit run frontend/app.py
+cd frontend
+python -m http.server 3000

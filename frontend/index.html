@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Заголовок вкладки -->
+    <title>AI Adaptive Tutor</title>
+
+    <!-- Шрифты: PT Sans (стандарт ВШЭ) -->
+    <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet" />
+
+    <!-- Стили -->
+    <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+    <!-- 🔹 Skip link для доступности (переход к контенту с клавиатуры) -->
+    <a href="#main-content" class="skip-link">Перейти к основному контенту</a>
+
+    <div class="app-wrapper">
+        <!-- ===== HEADER ===== -->
+        <header class="header" role="banner">
+            <div class="container header__inner">
+                <h1 class="header__title">
+                    <span class="header__logo" aria-hidden="true">🎓</span>
+                    AI Adaptive Tutor
+                </h1>
+                <div class="header__controls">
+                    <label for="student-select" class="visually-hidden">Выберите студента</label>
+                    <select id="student-select" class="form-select" aria-label="Выбор студента">
+                        <option value="" disabled selected>Загрузка студентов...</option>
+                        <!-- Сюда JS добавит реальных студентов из БД -->
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===== MAIN CONTENT ===== -->
+        <main id="main-content" class="main" role="main">
+            <div class="container">
+
+                <!-- 📊 Блок статистики -->
+                <section class="stats" aria-label="Ваш прогресс">
+                    <article class="stat-card">
+                        <span class="stat-card__value" id="xp-value" aria-live="polite">0</span>
+                        <span class="stat-card__label">XP</span>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card__value" id="level-value">1</span>
+                        <span class="stat-card__label">Уровень</span>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card__value" id="mastered-value">0</span>
+                        <span class="stat-card__label">Изучено тем</span>
+                    </article>
+                </section>
+
+                <!-- 📈 Прогресс-бар уровня -->
+                <div class="progress-wrapper">
+                    <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar__fill" id="progress-fill"></div>
+                    </div>
+                    <span class="progress-text" id="progress-text">0/100 XP до следующего уровня</span>
+                </div>
+
+                <!-- 🗺️ Карта знаний -->
+                <section class="topics-section" aria-label="Карта знаний">
+                    <h2 class="section-title">🗺️ Карта знаний</h2>
+                    <div class="topics-grid" id="topics-container" role="list">
+                        <!-- Темы генерируются через JS -->
+                        <button class="topic-card topic-card--locked" disabled aria-label="Тема 1: Введение (заблокирована)">
+                            <span class="topic-card__icon" aria-hidden="true">🔒</span>
+                            <span class="topic-card__title">Введение</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- 📝 Рабочая область: задание -->
+                <section class="task-section" aria-label="Задание">
+                    <h2 class="section-title" id="task-heading">📝 Выберите тему для начала</h2>
+
+                    <div id="task-placeholder" class="task-placeholder">
+                        <p>👈 Выберите тему выше, затем нажмите «Сгенерировать задание»</p>
+                    </div>
+
+                    <div id="task-content" class="task-content" hidden>
+                        <div class="task-meta">
+                            <span class="task-meta__difficulty" id="task-difficulty">medium</span>
+                            <span class="task-meta__mastery" id="task-mastery">Mastery: 0.0</span>
+                        </div>
+
+                        <p class="task-question" id="task-question" aria-live="polite">
+                            <!-- Вопрос подставляется через JS -->
+                        </p>
+
+                        <!-- Поле ввода ответа (текст/код) -->
+                        <div class="answer-input-wrapper">
+                            <label for="student-answer" class="visually-hidden">Ваш ответ</label>
+                            <textarea
+                                id="student-answer"
+                                class="form-textarea"
+                                placeholder="Введите код или значение..."
+                                rows="4"
+                                aria-label="Поле для ввода ответа"
+                            ></textarea>
+
+                            <div class="answer-actions">
+                                <button type="button" id="check-answer-btn" class="btn btn--primary" disabled>
+                                    ✅ Проверить ответ
+                                </button>
+                                <button type="button" id="explain-btn" class="btn btn--secondary" hidden>
+                                    💡 Объяснить решение
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Обратная связь после ответа -->
+                        <div id="feedback" class="feedback" role="status" aria-live="assertive" hidden>
+                            <p class="feedback__message" id="feedback-message"></p>
+                            <p class="feedback__explanation" id="feedback-explanation"></p>
+                        </div>
+                    </div>
+
+                    <button type="button" id="generate-btn" class="btn btn--primary btn--large" aria-describedby="generate-hint">
+                        🤖 Сгенерировать задание
+                    </button>
+                    <span id="generate-hint" class="visually-hidden">
+                        Нажимайте для получения нового задания по выбранной теме
+                    </span>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- ===== FOOTER ===== -->
+        <footer class="footer" role="contentinfo">
+            <div class="container">
+                <p>© 2026 НИУ ВШЭ · Адаптивная система обучения с ИИ</p>
+                <p class="footer__note">
+                    Интерфейс разработан с учётом принципов доступности (WCAG 2.1)
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 🔹 Область для озвучки статусов скринридерам -->
+    <div id="sr-announcer" class="visually-hidden" aria-live="assertive" aria-atomic="true"></div>
+
+    <!-- Скрипт -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

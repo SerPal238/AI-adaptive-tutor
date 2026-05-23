@@ -1,0 +1,649 @@
+/* ===== CSS VARIABLES: НАСТРАИВАЙТЕ ДИЗАЙН ЗДЕСЬ ===== */
+:root {
+    /* 🎨 Цвета ВШЭ (можно легко поменять) */
+    --color-primary: #0055A4;        /* Синий ВШЭ */
+    --color-primary-hover: #003d7a;  /* Тёмно-синий при наведении */
+    --color-accent: #ED1C24;         /* Красный ВШЭ для акцентов */
+    --color-success: #2e7d32;        /* Зелёный для правильных ответов */
+    --color-error: #c62828;          /* Красный для ошибок */
+
+    /* Фон и текст */
+    --color-bg: #f5f7fa;
+    --color-bg-card: #ffffff;
+    --color-text: #1a1a1a;
+    --color-text-secondary: #666666;
+    --color-border: #e0e0e0;
+
+    /* Фокус для доступности (клавиатурная навигация) */
+    --focus-ring: 3px solid var(--color-accent);
+    --focus-offset: 2px;
+
+    /* Шрифты */
+    --font-family: 'PT Sans', 'Arial', sans-serif;
+    --font-size-base: 16px;
+    --font-size-lg: 24px;
+    --font-size-xl: 32px;
+
+    /* Отступы и радиусы */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 40px;
+    --border-radius: 8px;
+    --border-radius-lg: 12px;
+
+    /* Тени */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* ===== БАЗОВЫЕ СТИЛИ ===== */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-bg);
+    min-height: 100vh;
+}
+
+/* 🔹 Skip link для доступности */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--color-primary);
+    color: white;
+    padding: var(--spacing-sm) var(--spacing-md);
+    z-index: 100;
+    text-decoration: none;
+    font-weight: 700;
+}
+.skip-link:focus {
+    top: 0;
+}
+
+/* 🔹 Скрытые элементы для скринридеров */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Контейнер для центрирования */
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 var(--spacing-md);
+}
+
+.app-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* ===== HEADER ===== */
+.header {
+    background: var(--color-bg-card);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-md) 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.header__inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+}
+
+.header__title {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.header__logo {
+    font-size: 1.5em;
+}
+
+/* ===== STATS ===== */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--spacing-md);
+    margin: var(--spacing-lg) 0;
+}
+
+.stat-card {
+    background: var(--color-bg-card);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    border-left: 4px solid var(--color-primary);
+}
+
+.stat-card__value {
+    display: block;
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.stat-card__label {
+    font-size: 0.9em;
+    color: var(--color-text-secondary);
+}
+
+/* ===== PROGRESS BAR ===== */
+.progress-wrapper {
+    background: var(--color-bg-card);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.progress-bar {
+    height: 12px;
+    background: var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: var(--spacing-xs);
+}
+
+.progress-bar__fill {
+    height: 100%;
+    background: var(--color-primary);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 0.9em;
+    color: var(--color-text-secondary);
+}
+
+/* ===== TOPICS GRID ===== */
+.section-title {
+    font-size: 1.4em;
+    margin: var(--spacing-lg) 0 var(--spacing-md);
+    color: var(--color-text);
+}
+
+.topics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-sm);
+}
+
+.topic-card {
+    background: var(--color-bg-card);
+    border: 2px solid var(--color-border);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+    font-size: 1em;
+}
+
+.topic-card:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    background: #f0f7ff;
+    transform: translateY(-2px);
+}
+
+.topic-card:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+.topic-card:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.topic-card--unlocked {
+    border-color: var(--color-primary);
+}
+
+.topic-card--mastered {
+    border-color: var(--color-success);
+    background: #e8f5e9;
+}
+
+.topic-card__icon {
+    display: block;
+    font-size: 1.5em;
+    margin-bottom: var(--spacing-xs);
+}
+
+.topic-card__title {
+    font-weight: 600;
+}
+
+/* ===== TASK SECTION ===== */
+.task-section {
+    background: var(--color-bg-card);
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md);
+    margin: var(--spacing-lg) 0;
+}
+
+.task-placeholder {
+    text-align: center;
+    padding: var(--spacing-xl);
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.task-meta {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    font-size: 0.9em;
+}
+
+.task-meta__difficulty {
+    background: #e3f2fd;
+    color: var(--color-primary);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.task-meta__mastery {
+    color: var(--color-text-secondary);
+}
+
+.task-question {
+    font-size: 1.2em;
+    font-weight: 500;
+    margin: var(--spacing-md) 0;
+    line-height: 1.6;
+}
+
+/* ===== OPTIONS ===== */
+.options-fieldset {
+    border: none;
+    margin: var(--spacing-lg) 0;
+}
+
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.option-btn {
+    background: var(--color-bg-card);
+    border: 2px solid var(--color-border);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 1em;
+    transition: all 0.2s ease;
+}
+
+.option-btn:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    background: #f0f7ff;
+}
+
+.option-btn:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+.option-btn[aria-checked="true"] {
+    border-color: var(--color-primary);
+    background: #e3f2fd;
+    font-weight: 600;
+}
+
+.option-btn--correct {
+    border-color: var(--color-success);
+    background: #e8f5e9;
+}
+
+.option-btn--wrong {
+    border-color: var(--color-error);
+    background: #ffebee;
+}
+
+/* ===== BUTTONS ===== */
+.btn {
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--border-radius);
+    font-family: inherit;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.btn:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+}
+
+.btn:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+.btn:disabled {
+    background: var(--color-border);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+}
+
+.btn--secondary {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 2px solid var(--color-border);
+}
+
+.btn--secondary:hover:not(:disabled) {
+    background: var(--color-border);
+}
+
+.btn--large {
+    padding: var(--spacing-md) var(--spacing-xl);
+    font-size: 1.1em;
+    width: 100%;
+    justify-content: center;
+}
+
+/* ===== FEEDBACK ===== */
+.feedback {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    display: none;
+}
+
+.feedback[hidden] {
+    display: none;
+}
+
+.feedback--success {
+    background: #e8f5e9;
+    border-left: 4px solid var(--color-success);
+    color: var(--color-success);
+    display: block;
+}
+
+.feedback--error {
+    background: #ffebee;
+    border-left: 4px solid var(--color-error);
+    color: var(--color-error);
+    display: block;
+}
+
+.feedback__message {
+    font-weight: 700;
+    margin-bottom: var(--spacing-xs);
+}
+
+.feedback__explanation {
+    font-size: 0.95em;
+    opacity: 0.9;
+}
+
+/* ===== FORM SELECT ===== */
+.form-select {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 2px solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-family: inherit;
+    font-size: 1em;
+    background: white;
+    cursor: pointer;
+}
+
+.form-select:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+    border-color: var(--color-primary);
+}
+
+/* ===== FOOTER ===== */
+.footer {
+    margin-top: auto;
+    background: var(--color-bg-card);
+    padding: var(--spacing-lg) 0;
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-size: 0.9em;
+    border-top: 1px solid var(--color-border);
+}
+
+.footer__note {
+    margin-top: var(--spacing-xs);
+    font-style: italic;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    :root {
+        --font-size-base: 15px;
+        --spacing-lg: 20px;
+    }
+
+    .header__inner {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .topics-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
+
+    .task-section {
+        padding: var(--spacing-md);
+    }
+}
+
+@media (max-width: 480px) {
+    .stats {
+        grid-template-columns: 1fr;
+    }
+
+    .task-meta {
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+}
+
+/* ===== PRINT STYLES (для печати заданий) ===== */
+@media print {
+    .header, .footer, .topics-section, .task-actions {
+        display: none;
+    }
+
+    body {
+        background: white;
+        color: black;
+    }
+
+    .task-section {
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+}
+
+/* ===== TEXTAREA ДЛЯ ОТВЕТА ===== */
+.answer-input-wrapper {
+    margin: var(--spacing-lg) 0;
+}
+
+.form-textarea {
+    width: 100%;
+    padding: var(--spacing-md);
+    border: 2px solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-family: 'Courier New', monospace;  /* Моноширинный для кода */
+    font-size: 1em;
+    line-height: 1.5;
+    resize: vertical;  /* Можно растягивать только по вертикали */
+    min-height: 100px;
+    background: #fafafa;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: white;
+    box-shadow: 0 0 0 3px rgba(15, 45, 105, 0.1);
+}
+
+.form-textarea:disabled {
+    background: #f0f0f0;
+    cursor: not-allowed;
+}
+
+.answer-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.answer-actions .btn {
+    flex: 1;
+}
+/* ============================================
+   🔹 ЕДИНЫЕ СТИЛИ ДЛЯ КОДА В ФИДБЕКЕ
+   ============================================ */
+
+/* 1. Сброс рамки и теней у всего контейнера фидбека */
+.feedback {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 10px 0 !important;
+}
+
+/* 2. Фон области объяснения (лёгкий серый, чтобы код выделялся) */
+.feedback__explanation,
+.explanation-block {
+    background: #f8f9fa !important;
+    padding: 20px !important;
+    border-radius: 8px !important;
+    margin-top: 12px !important;
+}
+
+/* 3. ГЛАВНЫЙ СТИЛЬ БЛОКА КОДА (перекрывает всё) */
+.code-block,
+.feedback__explanation .code-block,
+.explanation-block .code-block {
+    display: block !important;
+    background: #e8f0f8 !important;      /* Светло-голубой фон */
+    color: #4a5568 !important;           /* Спокойный серый текст */
+    padding: 16px !important;
+    margin: 15px 0 !important;
+    border: none !important;             /* Убираем ВСЕ полоски и рамки */
+    border-radius: 6px !important;
+    box-shadow: none !important;         /* Убираем тени */
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+    font-size: 0.9em !important;
+    line-height: 1.6 !important;
+    overflow-x: auto !important;
+}
+
+/* 4. <code> внутри блока НЕ должен ломать фон */
+.code-block code,
+.explanation-block .code-block code {
+    background: transparent !important;
+    color: inherit !important;
+    padding: 0 !important;
+    border: none !important;
+    display: block !important;           /* Чтобы код занимал всю ширину */
+}
+
+/* 5. Инлайн-код (в тексте объяснения) */
+.code-inline,
+.explanation-block .code-inline {
+    background: #d4e0f0 !important;
+    color: #4a5568 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-family: 'Consolas', 'Monaco', monospace !important;
+    font-size: 0.95em !important;
+    white-space: nowrap !important;
+}
+
+/* 6. Скроллбар (тонкий, в тон фона) */
+.code-block::-webkit-scrollbar {
+    height: 6px;
+}
+.code-block::-webkit-scrollbar-track {
+    background: #d4e0f0;
+    border-radius: 3px;
+}
+.code-block::-webkit-scrollbar-thumb {
+    background: #234B9B;
+    border-radius: 3px;
+}
+
+/* Инлайн-код (внутри текста и шагов) */
+.code-inline {
+    background: #e6e6e6;  /* Светло-синий */
+    color: #555;          /* Тёмно-серый */
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.95em;
+    white-space: nowrap;  /* Не переносить на новую строку */
+}
+
+/* Блоки кода (если всё же появятся) */
+.code-block {
+    background: #234B9B;
+    color: #666;
+    padding: 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    line-height: 1.6;
+    border: none;
+}

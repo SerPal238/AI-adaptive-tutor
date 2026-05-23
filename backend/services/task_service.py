@@ -8,37 +8,47 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from db.models import GeneratedTask, TopicMastery, Attempt
 from llm.base import LLMProvider, LLMConfig, TaskOutput
 from services.adaptation import get_or_create_mastery, mastery_to_difficulty, update_mastery
+from pathlib import Path
+SYLLABUS_PATH = Path(__file__).parent.parent / "topic_syllabus.json"
 
-TASK_PROMPT = """Ты — персональный репетитор по Python. Сгенерируй ИНДИВИДУАЛЬНОЕ задание.
+try:
+    with open(SYLLABUS_PATH, "r", encoding="utf-8") as f:
+        TOPIC_SYLLABUS = json.load(f)
+    print(f"✅ Syllabus загружен: {len(TOPIC_SYLLABUS)} тем")
+except FileNotFoundError:
+    print(f"⚠️ Файл syllabus не найден: {SYLLABUS_PATH}")
+    TOPIC_SYLLABUS = {}
 
-КОНТЕКСТ СТУДЕНТА (ПО ЭТОЙ ТЕМЕ):
+TASK_PROMPT = """Ты — персональный репетитор по Python. Сгенерируй УЧЕБНОЕ ЗАДАНИЕ, строго соответствующее текущему этапу изучения темы.
+
+ КОНТЕКСТ:
+Тема: {topic}
+Описание: {topic_description}
+Текущий этап: {stage_name}
+Фокус этапа: {stage_focus}
+
+ СТРОГИЕ ПРАВИЛА:
+1. РАЗРЕШЕНО использовать ТОЛЬКО: {allowed_constructs}
+2. ЗАПРЕЩЕНО использовать: {banned_constructs}
+3. Задание должно быть КРАТКИМ (1-3 предложения). Тренируй ТОЛЬКО фокус этапа.
+4. НЕ усложняй задание. Если этап "basic_print", давай задания только на print().
+5. НЕ повторяй задания из истории.
+6. expected_answer должен быть РАБОЧИМ, лаконичным кодом.
+7. explanation — краткая подсказка (1 предложение), а не решение.
+
+ КОНТЕКСТ ТЬЮТОРА (учти, но НЕ упоминай в тексте задания):
 {tutor_context_block}
 
-ИСТОРИЯ ПОСЛЕДНИХ ЗАДАНИЙ (СТРОГО НЕ ПОВТОРЯЙ ИХ):
+ ИСТОРИЯ (НЕ ПОВТОРЯЙ):
 {history_block}
 
-ПАРАМЕТРЫ:
-Тема: {topic}
-Базовый уровень: {difficulty}
-
-ИНСТРУКЦИИ:
-1. Адаптируй фокус задания под контекст (слабые места, стиль обучения, паузы).
-2. Если указаны слабые места — включи их мягкую проверку в формулировку или ожидаемый ответ.
-3. Если студент давно не практиковался — начни с повторения базы.
-4. Если есть серия практики (streak) — похвали в explanation или чуть усложни логику.
-5. ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON. БЕЗ markdown, БЕЗ текста до/после JSON.
-6. Поля ОБЯЗАТЕЛЬНЫ: question, expected_answer, answer_type, difficulty, explanation.
-
-Пример корректного JSON:
+ ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON (без markdown, без лишних слов):
 {{
-  "question": "Напишите код, который...",
-  "expected_answer": "print('...')",
+  "question": "Текст задания",
+  "expected_answer": "Корректный Python-код",
   "answer_type": "code",
-  "difficulty": "easy",
-  "explanation": "Функция print() выводит..."
-}}
-
-Генерируй задание:"""
+  "explanation": "Краткое пояснение концепции"
+}}"""
 
 VERIFY_PROMPT = """Ты проверяешь ЛОГИКУ кода на Python. Синтаксис уже проверен и ВЕРЕН.
 
@@ -82,19 +92,39 @@ VERIFY_PROMPT = """Ты проверяешь ЛОГИКУ кода на Python. 
 Если неправильный → weakness: "logic_error" или "missing_function" и т.д.
 
 Проверь ответ:"""
+
+
+# 🔹 Функция выбора этапа (ВНЕ класса, с НУЛЕВЫМ отступом!)
+def get_current_stage(topic_name: str, mastery_level: float) -> dict:
+    """Возвращает текущий этап обучения"""
+    syllabus = TOPIC_SYLLABUS.get(topic_name, {})
+    stage = get_current_stage(topic_name, mastery_level)
+
+    for stage in stages:
+        min_m, max_m = stage["mastery_range"]
+        if min_m <= mastery_level < max_m:
+            return stage
+
+    return stages[-1] if stages else {
+        "name": "general",
+        "focus": "практика",
+        "allowed": [],
+        "banned": []
+    }
+
 class TaskGenerationService:
     def __init__(self, llm: LLMProvider, session: AsyncSession):
         self.llm = llm
         self.session = session
 
     async def generate_adaptive_task(self, student_id: int, topic_id: int, topic_name: str) -> dict:
-        # 1. Получаем полную запись mastery (с новыми полями)
+        # 1. Получаем/создаём запись mastery
         stmt = select(TopicMastery).where(
             TopicMastery.student_id == student_id,
             TopicMastery.topic_id == topic_id
         )
         result = await self.session.exec(stmt)
-        mastery = result.first() or TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0)
+        mastery = result.first()
 
         if not mastery:
             mastery = TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0)
@@ -102,37 +132,40 @@ class TaskGenerationService:
             await self.session.commit()
             await self.session.refresh(mastery)
 
-        mastery_level_value = mastery.mastery_level
-        difficulty = mastery_to_difficulty(mastery_level_value)
+        mastery_level = mastery.mastery_level
 
-        # 2. Получаем краткосрочную историю (последние 4 попытки)
+        # 🔹 ОПРЕДЕЛЯЕМ ТЕКУЩИЙ ЭТАП ПО SYLLABUS
+        stage = get_current_stage(topic_name, mastery_level)
+        stage_name = stage["name"]
+        stage_focus = stage["focus"]
+        allowed = stage.get("allowed", [])
+        banned = stage.get("banned", [])
+        topic_desc = TOPIC_SYLLABUS.get(topic_name, {}).get("description", "Базовые концепции Python")
+
+        # Для UI/БД оставляем difficulty, вычисляя его из индекса этапа
+        stages_list = TOPIC_SYLLABUS.get(topic_name, {}).get("stages", [])
+        stage_index = next((i for i, s in enumerate(stages_list) if s["name"] == stage_name), 0)
+        difficulty = "easy" if stage_index < 2 else "medium" if stage_index == 2 else "hard"
+
+        # 2. Краткосрочная история (последние 3 попытки)
         attempts_stmt = select(Attempt).where(
             Attempt.student_id == student_id,
             Attempt.topic_id == topic_id
-        ).order_by(Attempt.completed_at.desc()).limit(4)
+        ).order_by(Attempt.completed_at.desc()).limit(3)
+        recent_attempts = (await self.session.exec(attempts_stmt)).all()
 
-        attempts_result = await self.session.exec(attempts_stmt)
-        recent_attempts = attempts_result.all()
-
-        # 3. Собираем КОНТЕКСТ ТЬЮТОРА (структурированно!)
+        # 3. Контекст тьютора
         context_parts = []
-
-        # 🔹 Долгосрочные данные
         if mastery.identified_weaknesses:
-            context_parts.append(f" СЛАБЫЕ МЕСТА: {', '.join(mastery.identified_weaknesses)}. "
-                                 f"Сделай акцент на их проработке, но НЕ упоминай ошибки в тексте задания.")
-
+            context_parts.append(f"⚠️ СЛАБЫЕ МЕСТА: {', '.join(mastery.identified_weaknesses)}. "
+                                 f"Акцентируй внимание на этом в объяснении, но НЕ в тексте задания.")
         if mastery.practice_streak >= 3:
-            context_parts.append(f" МОТИВАЦИЯ: Студент практикуется {mastery.practice_streak} дней подряд. "
-                                 f"Поддержи ритм, чуть усложни задачу.")
-
-        # 🔹 Краткосрочные данные (последние попытки)
+            context_parts.append(f"🔥 МОТИВАЦИЯ: Практика {mastery.practice_streak} дней подряд. Поддержи ритм.")
         if recent_attempts:
             context_parts.append("📜 ПОСЛЕДНИЕ ПОПЫТКИ:")
             for i, att in enumerate(recent_attempts, 1):
                 status = "✅ Верно" if att.is_correct else f"❌ Ошибка: {att.weakness or 'неизвестно'}"
                 context_parts.append(f"  {i}. {status}")
-
         tutor_context = "\n".join(context_parts) if context_parts else "🆕 НОВЫЙ СТУДЕНТ. Начни с базы."
 
         # 4. История заданий (чтобы не повторяться)
@@ -140,52 +173,62 @@ class TaskGenerationService:
             GeneratedTask.student_id == student_id,
             GeneratedTask.topic_id == topic_id
         ).order_by(GeneratedTask.created_at.desc()).limit(3)
-
         history_tasks = (await self.session.exec(history_stmt)).all()
         history_block = ""
         if history_tasks:
-            history_block = "📚 РАНЕЕ ДАВАЛИСЬ:\n" + "\n".join(
+            history_block = " РАНЕЕ ДАВАЛИСЬ:\n" + "\n".join(
                 f"{i}. {json.loads(t.content_json).get('question', '')}"
                 for i, t in enumerate(history_tasks, 1)
             )
 
-        # Экранируем для .format()
+        # Экранирование фигурных скобок для .format()
         ctx_escaped = tutor_context.replace("{", "{{").replace("}", "}}")
         hist_escaped = history_block.replace("{", "{{").replace("}", "}}")
 
         # 5. Формируем промпт
         prompt = TASK_PROMPT.format(
             topic=topic_name,
-            difficulty=mastery_to_difficulty(mastery.mastery_level),
+            topic_description=topic_desc,
+            stage_name=stage_name,
+            stage_focus=stage_focus,
+            allowed_constructs=", ".join(allowed),
+            banned_constructs=", ".join(banned),
             tutor_context_block=ctx_escaped,
             history_block=hist_escaped
         )
 
-        # 5. Вызываем LLM
-        config = LLMConfig(temperature=0.6, max_tokens=1024)
-        task_output = await self.llm.generate_task(prompt, config)
+        # 6. Вызываем LLM
+        config = LLMConfig(temperature=0.5, max_tokens=800)
+        try:
+            task_output = await self.llm.generate_task(prompt, config)
+            # Безопасное извлечение данных (поддержка и Pydantic, и dict)
+            task_data = task_output.model_dump() if hasattr(task_output, "model_dump") else task_output
+        except Exception as e:
+            print(f"❌ Ошибка генерации задания: {e}")
+            raise
 
-        # 6. Сохраняем задание
+        # 7. Сохраняем задание
         generated = GeneratedTask(
             student_id=student_id,
             topic_id=topic_id,
             difficulty=difficulty,
-            content_json=json.dumps(task_output.model_dump()),
+            content_json=json.dumps(task_data),
             created_at=datetime.utcnow()
         )
         self.session.add(generated)
         await self.session.commit()
         await self.session.refresh(generated)
 
-        # 7. Возвращаем результат
+        # 8. Возвращаем результат
         return {
             "task_id": generated.id,
-            "question": task_output.question,
-            "expected_answer": task_output.expected_answer,
-            "answer_type": task_output.answer_type,
+            "question": task_data.get("question", ""),
+            "expected_answer": task_data.get("expected_answer", ""),
+            "answer_type": task_data.get("answer_type", "code"),
             "difficulty": difficulty,
-            "mastery_level": round(mastery_level_value, 2),
-            "explanation": task_output.explanation
+            "mastery_level": round(mastery_level, 2),
+            "explanation": task_data.get("explanation", ""),
+            "stage_name": stage_name
         }
 
     async def submit_answer(self, student_id: int, topic_id: int, task_id: int, is_correct: bool) -> dict:

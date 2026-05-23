@@ -1,0 +1,187 @@
+{
+  "Введение в Python": {
+    "description": "Базовый синтаксис, вывод информации, ввод данных, переменные",
+    "stages": [
+      {
+        "name": "basic_print",
+        "mastery_range": [0.0, 0.25],
+        "focus": "Функция print() и вывод строк",
+        "allowed": ["print", "strings", "numbers", "basic_math"],
+        "banned": ["input", "variables", "if", "loops", "functions", "methods"],
+        "example": "print('Привет, мир!')"
+      },
+      {
+        "name": "variables_basic",
+        "mastery_range": [0.25, 0.5],
+        "focus": "Переменные и присваивание",
+        "allowed": ["print", "variables", "assignment", "integers", "strings"],
+        "banned": ["input", "if", "loops", "functions", "string_methods", "f-strings"],
+        "example": "x = 10\nprint(x)"
+      },
+      {
+        "name": "input_basic",
+        "mastery_range": [0.5, 0.75],
+        "focus": "Функция input() для ввода данных",
+        "allowed": ["print", "input", "variables", "assignment"],
+        "banned": ["if", "loops", "functions", "string_methods", "type_conversion"],
+        "example": "name = input('Введите имя: ')\nprint(name)"
+      },
+      {
+        "name": "operations_combo",
+        "mastery_range": [0.75, 1.0],
+        "focus": "Комбинация ввода, вывода и простых операций",
+        "allowed": ["print", "input", "variables", "math_ops", "concatenation", "f-strings"],
+        "banned": ["if", "loops", "functions", "string_methods", "classes"],
+        "example": "name = input()\nprint(f'Привет, {name}!')"
+      }
+    ]
+  },
+  "Переменные и типы данных": {
+    "description": "Типы данных, преобразование типов, операции с данными",
+    "stages": [
+      {
+        "name": "types_basic",
+        "mastery_range": [0.0, 0.3],
+        "focus": "Типы данных: int, float, str, bool",
+        "allowed": ["print", "variables", "type()", "int", "float", "str", "bool"],
+        "banned": ["input", "if", "loops", "functions", "lists", "dicts"],
+        "example": "x = 5\nprint(type(x))"
+      },
+      {
+        "name": "type_conversion",
+        "mastery_range": [0.3, 0.6],
+        "focus": "Преобразование типов (int(), str(), float())",
+        "allowed": ["print", "variables", "int()", "str()", "float()", "type_conversion"],
+        "banned": ["input", "if", "loops", "functions", "lists", "string_methods"],
+        "example": "x = int('10')\nprint(x + 5)"
+      },
+      {
+        "name": "operations_types",
+        "mastery_range": [0.6, 0.85],
+        "focus": "Операции с разными типами данных",
+        "allowed": ["print", "variables", "math_ops", "string_ops", "concatenation", "type_conversion"],
+        "banned": ["input", "if", "loops", "functions", "lists", "dicts"],
+        "example": "a = 5\nb = '3'\nprint(a + int(b))"
+      },
+      {
+        "name": "complex_types",
+        "mastery_range": [0.85, 1.0],
+        "focus": "Работа с несколькими типами одновременно",
+        "allowed": ["print", "input", "variables", "type_conversion", "f-strings", "math_ops", "string_ops"],
+        "banned": ["if", "loops", "functions", "lists", "dicts", "classes"],
+        "example": "age = int(input())\nprint(f'Через год: {age + 1}')"
+      }
+    ]
+  },
+  "Циклы": {
+    "description": "Циклы for и while, range(), итерации, break/continue",
+    "stages": [
+      {
+        "name": "while_basic",
+        "mastery_range": [0.0, 0.3],
+        "focus": "Простой цикл while",
+        "allowed": ["while", "print", "variables", "increment", "comparison"],
+        "banned": ["for", "range", "if", "break", "continue", "functions", "lists"],
+        "example": "i = 0\nwhile i < 5:\n    print(i)\n    i += 1"
+      },
+      {
+        "name": "for_range",
+        "mastery_range": [0.3, 0.6],
+        "focus": "Цикл for с range()",
+        "allowed": ["for", "range()", "print", "variables"],
+        "banned": ["while", "if", "break", "continue", "functions", "lists", "nested_loops"],
+        "example": "for i in range(5):\n    print(i)"
+      },
+      {
+        "name": "loop_control",
+        "mastery_range": [0.6, 0.85],
+        "focus": "Управление циклами (break, continue)",
+        "allowed": ["for", "while", "range()", "break", "continue", "if", "print"],
+        "banned": ["functions", "lists", "nested_loops", "else_in_loop"],
+        "example": "for i in range(10):\n    if i == 5:\n        break\n    print(i)"
+      },
+      {
+        "name": "loops_advanced",
+        "mastery_range": [0.85, 1.0],
+        "focus": "Комбинация циклов с условиями и списками",
+        "allowed": ["for", "while", "range()", "if", "break", "continue", "lists", "in", "print"],
+        "banned": ["functions", "nested_loops", "dicts", "classes"],
+        "example": "for i in range(3):\n    for j in range(3):\n        print(i, j)"
+      }
+    ]
+  },
+  "Функции": {
+    "description": "Объявление функций, параметры, возврат значений, область видимости",
+    "stages": [
+      {
+        "name": "function_basic",
+        "mastery_range": [0.0, 0.3],
+        "focus": "Объявление и вызов функций без параметров",
+        "allowed": ["def", "print", "function_call", "no_parameters"],
+        "banned": ["parameters", "return", "if", "loops", "lists", "nested_functions"],
+        "example": "def greet():\n    print('Привет!')\ngreet()"
+      },
+      {
+        "name": "function_parameters",
+        "mastery_range": [0.3, 0.6],
+        "focus": "Функции с параметрами",
+        "allowed": ["def", "parameters", "print", "function_call", "arguments"],
+        "banned": ["return", "if", "loops", "default_params", "lists"],
+        "example": "def greet(name):\n    print(f'Привет, {name}!')\ngreet('Анна')"
+      },
+      {
+        "name": "function_return",
+        "mastery_range": [0.6, 0.85],
+        "focus": "Возврат значений (return)",
+        "allowed": ["def", "parameters", "return", "print", "function_call", "variables"],
+        "banned": ["if", "loops", "default_params", "lists", "multiple_returns"],
+        "example": "def add(a, b):\n    return a + b\nresult = add(3, 5)"
+      },
+      {
+        "name": "function_advanced",
+        "mastery_range": [0.85, 1.0],
+        "focus": "Комбинация параметров, return и условий",
+        "allowed": ["def", "parameters", "return", "if", "print", "function_call", "default_params", "variables"],
+        "banned": ["loops", "lists", "classes", "lambda", "*args", "**kwargs"],
+        "example": "def max_num(a, b):\n    if a > b:\n        return a\n    return b"
+      }
+    ]
+  },
+  "ООП": {
+    "description": "Классы, объекты, атрибуты, методы, инкапсуляция",
+    "stages": [
+      {
+        "name": "class_basic",
+        "mastery_range": [0.0, 0.3],
+        "focus": "Создание простого класса и объекта",
+        "allowed": ["class", "object_creation", "print", "attributes", "__init__"],
+        "banned": ["methods", "inheritance", "private", "static", "loops", "if"],
+        "example": "class Dog:\n    def __init__(self, name):\n        self.name = name\nmy_dog = Dog('Бобик')"
+      },
+      {
+        "name": "methods_basic",
+        "mastery_range": [0.3, 0.6],
+        "focus": "Методы класса",
+        "allowed": ["class", "object", "methods", "self", "print", "__init__", "attributes"],
+        "banned": ["inheritance", "private", "static", "loops", "if", "super()"],
+        "example": "class Dog:\n    def bark(self):\n        print('Гав!')"
+      },
+      {
+        "name": "encapsulation",
+        "mastery_range": [0.6, 0.85],
+        "focus": "Инкапсуляция и приватные атрибуты",
+        "allowed": ["class", "object", "methods", "private_attributes", "getters", "setters", "self"],
+        "banned": ["inheritance", "static", "classmethod", "loops", "if"],
+        "example": "class BankAccount:\n    def __init__(self):\n        self.__balance = 0"
+      },
+      {
+        "name": "inheritance_basic",
+        "mastery_range": [0.85, 1.0],
+        "focus": "Наследование классов",
+        "allowed": ["class", "inheritance", "super()", "methods", "attributes", "override", "self"],
+        "banned": ["multiple_inheritance", "abstract", "interfaces", "polymorphism_complex"],
+        "example": "class Animal:\n    def speak(self):\n        pass\n\nclass Cat(Animal):\n    def speak(self):\n        print('Мяу!')"
+      }
+    ]
+  }
+}

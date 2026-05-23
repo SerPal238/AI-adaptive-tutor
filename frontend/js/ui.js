@@ -189,26 +189,6 @@ export function renderTask(task, topicName) {
 }
 
 /**
- * Нормализация ответа студента (убираем лишние пробелы, переносы, приводим кавычки)
- */
-export function normalizeAnswer(text) {
-    if (!text) return '';
-    return text
-        .replace(/\r\n/g, '\n')           // Windows → Unix переносы
-        .replace(/\r/g, '\n')             // Mac → Unix
-        .replace(/\s+/g, ' ')             // Множественные пробелы → один
-        .replace(/\s*=\s*/g, '=')         // Убираем пробелы вокруг =
-        .replace(/\s*\(\s*/g, '(')        // Убираем пробелы после (
-        .replace(/\s*\)\s*/g, ')')        // Убираем пробелы перед )
-        .replace(/\s*\{\s*/g, '{')        // Для f-строк
-        .replace(/\s*\}\s*/g, '}')
-        .replace(/"/g, "'")               // Все кавычки → одинарные
-        .replace(/\n\s*\n/g, '\n')        // Убираем пустые строки
-        .trim()
-        .toLowerCase();                    // Игнорируем регистр
-}
-
-/**
  * Отображает код с переносами строк
  */
 function formatCodeForDisplay(code) {

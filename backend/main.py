@@ -9,7 +9,7 @@ from db.models import GeneratedTask
 import json
 # 🔹 Импорт из нашей новой архитектуры
 from db.engine import engine, get_session
-from db.models import SQLModel
+from db.models import SQLModel, Student
 from services.student_service import (
     get_or_create_student,
     analyze_answer,
@@ -18,6 +18,7 @@ from services.student_service import (
     verify_access,
     get_student_full_status
 )
+from services.adaptation import update_mastery
 from llm.ollama_client import OllamaClient
 from knowledge_graph import graph_manager  # твой граф (остаётся синхронным)
 
@@ -121,12 +122,6 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
     if req.student_answer and len(req.student_answer.strip()) > 0:
         print("🤖 Запускаю LLM-верификацию...")
 
-        from services.task_service import TaskGenerationService
-        from llm.ollama_client import OllamaClient
-        from sqlmodel import select
-        from db.models import GeneratedTask
-        import json
-
         stmt = select(GeneratedTask).where(GeneratedTask.id == req.task_id)
         result = await session.exec(stmt)
         task = result.first()
@@ -150,7 +145,6 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
             is_correct = llm_feedback.get("is_correct", False)
 
             #  Передаём llm_feedback
-            from services.student_service import analyze_answer, update_gamification
             analysis = await analyze_answer(
                 session,
                 req.student_id,
@@ -170,7 +164,6 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
 
     # Фолбэк (старая логика)
     print("🔄 Использую старую логику проверки")
-    from services.student_service import analyze_answer, update_gamification
     analysis = await analyze_answer(session, req.student_id, req.topic_id, req.is_correct)
     game_update = await update_gamification(session, req.student_id, req.is_correct)
 
@@ -197,9 +190,6 @@ async def get_all_students(session: AsyncSession = Depends(get_session)):
     """
     Получить список всех студентов
     """
-    from sqlmodel import select
-    from db.models import Student
-
     stmt = select(Student).order_by(Student.id)
     result = await session.exec(stmt)
     students = result.all()
@@ -245,7 +235,6 @@ async def explain_task(req: AnswerRequest, session: AsyncSession = Depends(get_s
     )
 
     # 🔹 Снижаем mastery (наказание за пропуск)
-    from services.adaptation import update_mastery
     new_mastery = await update_mastery(session, req.student_id, req.topic_id, is_correct=False)
 
     print(f"✅ Объяснение сгенерировано. Новый mastery: {new_mastery}")

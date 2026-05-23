@@ -98,7 +98,7 @@ VERIFY_PROMPT = """Ты проверяешь ЛОГИКУ кода на Python. 
 def get_current_stage(topic_name: str, mastery_level: float) -> dict:
     """Возвращает текущий этап обучения"""
     syllabus = TOPIC_SYLLABUS.get(topic_name, {})
-    stage = get_current_stage(topic_name, mastery_level)
+    stages = syllabus.get("stages", [])
 
     for stage in stages:
         min_m, max_m = stage["mastery_range"]

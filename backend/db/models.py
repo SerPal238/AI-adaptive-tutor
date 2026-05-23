@@ -117,18 +117,3 @@ class Attempt(SQLModel, table=True):
 
     # Обратные связи
     student: Student = Relationship(back_populates="attempts")
-
-class TutorSession(SQLModel, table=True):
-    __tablename__ = "tutor_session"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    student_id: int = Field(foreign_key="student.id")
-    topic_id: int = Field(foreign_key="topic.id")
-
-    # 🔹 Контекст сессии
-    current_goal: str  # "Научиться использовать input()"
-    recent_attempts: str  # JSON с последними 3 попытками
-    emotional_state: str = Field(default="neutral", description="frustrated|confident|curious")
-
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)

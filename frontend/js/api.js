@@ -4,7 +4,6 @@
  */
 
 import { CONFIG } from './config.js';
-import { API_URL } from './config.js';
 /**
  * Базовая функция для запросов с обработкой ошибок
  */
@@ -66,24 +65,13 @@ export async function generateTask(studentId, topic) {
 
     console.log('📤 Отправляю запрос на генерацию:', { student_id: studentId, topic_id: topicId });
 
-    const response = await fetch(`${API_URL}/task/generate`, {
+    return request('/task/generate', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
             student_id: studentId,
             topic_id: topicId
         }),
     });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Ошибка генерации:', errorData);
-        throw new Error(errorData.detail || `Ошибка ${response.status}: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
@@ -133,12 +121,9 @@ export async function getStudents() {
  * Запросить подробное объяснение задания
  */
 export async function requestExplanation(studentId, topicId, taskId) {
-    // 🔹 НЕ передаём question и expected_answer — бэк сам достанет из БД
-    const response = await fetch(`${API_URL}/task/explain`, {
+
+    return request('/task/explain', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
             student_id: parseInt(studentId),  // Убедись, что это число
             topic_id: parseInt(topicId?.id || topicId),  // Извлекаем ID
@@ -147,12 +132,4 @@ export async function requestExplanation(studentId, topicId, taskId) {
             student_answer: ""   // Обязательно для AnswerRequest
         }),
     });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Ошибка объяснения:', errorData);
-        throw new Error(errorData.detail || `Ошибка ${response.status}`);
-    }
-
-    return await response.json();
 }

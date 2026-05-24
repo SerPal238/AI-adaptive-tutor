@@ -1,28 +1,28 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from services.task_service import TaskGenerationService
-from services.adaptation import get_or_create_mastery
 from sqlmodel import select
-from db.models import GeneratedTask
-import json
+from db.models import GeneratedTask, TopicMastery
+import traceback
 # 🔹 Импорт из нашей новой архитектуры
 from db.engine import engine, get_session
 from db.models import SQLModel, Student
 from services.student_service import (
     get_or_create_student,
-    analyze_answer,
+    register_attempt,
     update_gamification,
     generate_content,
     verify_access,
     get_student_full_status
 )
-from services.adaptation import update_mastery
 from llm.ollama_client import OllamaClient
 from knowledge_graph import graph_manager  # твой граф (остаётся синхронным)
+import logging
 
+logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # 🔹 Инициализация БД при старте сервера
 # ─────────────────────────────────────────────────────────────
@@ -35,9 +35,17 @@ async def lifespan(app: FastAPI):
     # Загружаем граф знаний из БД в память
     async with AsyncSession(engine) as session:
         await graph_manager.load_from_db(session)
+    # 🔹 Создаём Ollama-клиент ОДИН раз на всё приложение
+    app.state.llm = OllamaClient()
 
     yield  # Сервер запущен
 
+    # 🔹 Закрываем клиент при остановке
+    await app.state.llm._client.aclose()
+
+# Dependency для получения клиента
+def get_llm(request: Request) -> OllamaClient:
+    return request.app.state.llm
 
 app = FastAPI(title="AI Adaptive Tutor API", version="1.0", lifespan=lifespan)
 
@@ -58,8 +66,7 @@ class AnswerRequest(BaseModel):
     student_id: int
     topic_id: int
     task_id: int
-    is_correct: bool = False  # ← для обратной совместимости
-    student_answer: str = ""   # ← новое поле: текст ответа студента
+    student_answer: str = ""
 
 class ContentRequest(BaseModel):
     student_id: int
@@ -75,19 +82,27 @@ async def get_status(student_id: int, session: AsyncSession = Depends(get_sessio
     # Авто-создание студента, если нет в БД
     await get_or_create_student(session, student_id)
 
-
-
     # Получаем полный статус через сервис
     status = await get_student_full_status(session, student_id)
     if not status:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    # получаем список разблокированных тем из статуса
     unlocked = status.get("unlocked_topics", [])
+
+    # Получаем уже существующие mastery для студента
+    existing_stmt = select(TopicMastery.topic_id).where(
+        TopicMastery.student_id == student_id
+    )
+    existing = set((await session.exec(existing_stmt)).all())
+
+    # Создаём только недостающие mastery-записи
     for topic_id in unlocked:
-        await get_or_create_mastery(session, student_id, topic_id)
+        if topic_id not in existing:
+            session.add(TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0))
 
     await session.commit()
-    # 🔹 ДОБАВЬ: Возвращаем граф знаний
+
     return {
         **status,
         "knowledge_graph_nodes": list(graph_manager.graph.nodes(data=True))
@@ -98,20 +113,16 @@ async def get_status(student_id: int, session: AsyncSession = Depends(get_sessio
 # 🔹 2. POST /task/generate — генерация адаптивного задания
 # ─────────────────────────────────────────────────────────────
 @app.post("/task/generate")
-async def get_task(req: ContentRequest, session: AsyncSession = Depends(get_session)):
+async def get_task(req: ContentRequest, session: AsyncSession = Depends(get_session), llm: OllamaClient = Depends(get_llm)):
     # Проверяем доступ через граф
     access = await verify_access(session, req.student_id, req.topic_id)
     if not access["access"]:
         return {"error": access["reason"], "access": False}
-
-    # Генерируем задание через LLM-сервис
-    llm = OllamaClient()
     try:
         task = await generate_content(session, req.student_id, req.topic_id, llm)
         return {**task, "access": True}
     except Exception as e:
         # 🔹 ПОДРОБНЫЙ ЛОГ ОШИБКИ
-        import traceback
         print(f"🔴 LLM Error Details:")
         print(f"  Type: {type(e).__name__}")
         print(f"  Message: {str(e)}")
@@ -124,7 +135,7 @@ async def get_task(req: ContentRequest, session: AsyncSession = Depends(get_sess
 # 🔹 3. POST /task/submit — обработка ответа студента
 # ─────────────────────────────────────────────────────────────
 @app.post("/task/submit")
-async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_session)):
+async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_session), llm: OllamaClient = Depends(get_llm)):
     print(f" Получен ответ: student_id={req.student_id}, task_id={req.task_id}")
 
     if req.student_answer and len(req.student_answer.strip()) > 0:
@@ -135,16 +146,16 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
         task = result.first()
 
         if task:
-            task_data = json.loads(task.content_json)
+            task_data = task.content
 
-            llm = OllamaClient()
             service = TaskGenerationService(llm, session)
 
             # 🔹 Получаем вердикт LLM
             llm_feedback = await service.verify_student_answer(
                 question=task_data.get("question", ""),
                 expected_answer=task_data.get("expected_answer", ""),
-                student_answer=req.student_answer
+                student_answer=req.student_answer,
+                answer_type = task_data.get("answer_type", "code")
             )
 
             print(f"✅ Вердикт LLM: is_correct={llm_feedback.get('is_correct')}")
@@ -153,7 +164,7 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
             is_correct = llm_feedback.get("is_correct", False)
 
             #  Передаём llm_feedback
-            analysis = await analyze_answer(
+            analysis = await register_attempt(
                 session,
                 req.student_id,
                 req.topic_id,
@@ -169,17 +180,6 @@ async def submit_answer(req: AnswerRequest, session: AsyncSession = Depends(get_
                 "analysis": analysis,
                 "gamification": game_update
             }
-
-    # Фолбэк (старая логика)
-    print("🔄 Использую старую логику проверки")
-    analysis = await analyze_answer(session, req.student_id, req.topic_id, req.is_correct)
-    game_update = await update_gamification(session, req.student_id, req.is_correct)
-
-    return {
-        "is_correct": req.is_correct,
-        "analysis": analysis,
-        "gamification": game_update
-    }
 
 # ─────────────────────────────────────────────────────────────
 # эндпоинт для инициализации тестового студента
@@ -214,7 +214,7 @@ async def get_all_students(session: AsyncSession = Depends(get_session)):
 
 
 @app.post("/task/explain")
-async def explain_task(req: AnswerRequest, session: AsyncSession = Depends(get_session)):
+async def explain_task(req: AnswerRequest, session: AsyncSession = Depends(get_session), llm: OllamaClient = Depends(get_llm)):
     """
     Сгенерировать подробное объяснение задания (без проверки ответа)
     """
@@ -228,10 +228,9 @@ async def explain_task(req: AnswerRequest, session: AsyncSession = Depends(get_s
     if not task:
         raise HTTPException(status_code=404, detail="Задание не найдено")
 
-    task_data = json.loads(task.content_json)
+    task_data = task.content
 
     # Создаём сервис
-    llm = OllamaClient()
     service = TaskGenerationService(llm, session)
 
     # 🔹 Генерируем подробное объяснение
@@ -242,14 +241,25 @@ async def explain_task(req: AnswerRequest, session: AsyncSession = Depends(get_s
         topic_id=req.topic_id
     )
 
-    # 🔹 Снижаем mastery (наказание за пропуск)
-    new_mastery = await update_mastery(session, req.student_id, req.topic_id, is_correct=False)
+    # 🔹 Используем новую логику
+    analysis = await register_attempt(
+        session,
+        req.student_id,
+        req.topic_id,
+        is_correct=False,
+        is_explanation=True  # ← особая обработка
+    )
 
-    print(f"✅ Объяснение сгенерировано. Новый mastery: {new_mastery}")
+    logger.info(f"✅ Объяснение сгенерировано. Новый mastery: {analysis['new_mastery_level']}")
 
     return {
         "detailed_explanation": explanation.get("main_explanation", ""),
         "step_by_step": explanation.get("steps", []),
         "hints": explanation.get("hints", []),
-        "new_mastery": new_mastery
+        "new_mastery": analysis["new_mastery_level"]
     }
+
+@app.post("/admin/reload-graph")
+async def reload_graph(session: AsyncSession = Depends(get_session)):
+    await graph_manager.load_from_db(session)
+    return {"status": "reloaded", "nodes": len(graph_manager.graph.nodes())}

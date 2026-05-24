@@ -1,7 +1,7 @@
 # backend/db/models.py
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ─────────────────────────────────────────────────────────────
@@ -14,7 +14,8 @@ class Student(SQLModel, table=True):
     name: str
     xp: int = Field(default=0)
     level: int = Field(default=1)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Обратные связи
     mastery_levels: List["TopicMastery"] = Relationship(
@@ -26,6 +27,11 @@ class Student(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
+    # TODO: Planned features — использовать для персонализации обучения
+    # learning_style: визуал/аудиал/кинестетик — адаптировать объяснения
+    # hint_preference: уровень детализации подсказок
+    # motivation_notes: заметки для LLM-репетитора о студенте
+    # last_session_summary: контекст для следующего занятия
     learning_style: Optional[str] = Field(default="balanced", description="visual|auditory|kinesthetic|balanced")
     hint_preference: Optional[str] = Field(default="socratic", description="direct|socratic|minimal")
     motivation_notes: Optional[str] = Field(default=None, description="Заметки репетитора о студенте")
@@ -40,12 +46,24 @@ class Topic(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     subject: str
-    prerequisites: str = Field(default="", description="Список ID предков через запятую: '1,3,5'")
-
-    # Обратная связь (опционально)
     mastery_records: List["TopicMastery"] = Relationship(back_populates="topic")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    prerequisites: List["TopicPrerequisite"] = Relationship(
+        back_populates="topic",
+        sa_relationship_kwargs={
+            "foreign_keys": "[TopicPrerequisite.topic_id]",
+            "cascade": "all, delete-orphan"
+        }
+    )
 
+    required_for: List["TopicPrerequisite"] = Relationship(
+        back_populates="prerequisite",
+        sa_relationship_kwargs={
+            "foreign_keys": "[TopicPrerequisite.prerequisite_id]",
+            "cascade": "all, delete-orphan"
+        }
+    )
 # ─────────────────────────────────────────────────────────────
 # 🔹 TopicMastery — уровень владения темой (студент + тема)
 # ─────────────────────────────────────────────────────────────
@@ -77,7 +95,7 @@ class TopicMastery(SQLModel, table=True):
 
     correct_streak: int = Field(default=0, description="Сколько раз подряд ответил верно")
 
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # связи
     student: Student = Relationship(back_populates="mastery_levels")
@@ -93,9 +111,8 @@ class GeneratedTask(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     student_id: int = Field(foreign_key="student.id", index=True)
     topic_id: int = Field(foreign_key="topic.id", index=True)
-    difficulty: str = Field(default="medium")  # easy/medium/hard
-    content_json: str  # JSON с вопросом, вариантами, ответом
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    content: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -110,10 +127,27 @@ class Attempt(SQLModel, table=True):
     task_id: Optional[int] = Field(default=None, foreign_key="generated_task.id")
     is_correct: bool
     score: float = Field(default=0.0)
-    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # 🔹 НОВОЕ: Диагноз от LLM для конкретной попытки
     weakness: Optional[str] = Field(default=None, description="Слабое место: syntax_error, logic_flow, input_syntax и т.д.")
 
     # Обратные связи
     student: Student = Relationship(back_populates="attempts")
+
+
+class TopicPrerequisite(SQLModel, table=True):
+    __tablename__ = "topic_prerequisite"
+
+    topic_id: int = Field(foreign_key="topic.id", primary_key=True)
+    prerequisite_id: int = Field(foreign_key="topic.id", primary_key=True)
+
+    # Опционально: связи для удобства
+    topic: "Topic" = Relationship(
+        back_populates="prerequisites",
+        sa_relationship_kwargs={"foreign_keys": "[TopicPrerequisite.topic_id]"}
+    )
+    prerequisite: "Topic" = Relationship(
+        back_populates="required_for",
+        sa_relationship_kwargs={"foreign_keys": "[TopicPrerequisite.prerequisite_id]"}
+    )

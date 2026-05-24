@@ -7,3 +7,9 @@ uvicorn main:app --reload
 streamlit run frontend/app.py
 cd frontend
 python -m http.server 3000
+
+models.py
+learning_style: Optional[str] = "balanced"
+hint_preference: Optional[str] = "socratic"
+motivation_notes: Optional[str] = None
+last_session_summary: Optional[str] = None

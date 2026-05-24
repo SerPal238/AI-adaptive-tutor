@@ -391,6 +391,12 @@ body {
     display: none;
 }
 
+.feedback--info {
+    background: #e3f2fd;
+    border-left: 4px solid var(--color-primary);
+    color: var(--color-text);
+    display: block;
+}
 .feedback--success {
     background: #e8f5e9;
     border-left: 4px solid var(--color-success);
@@ -562,7 +568,7 @@ body {
     margin-top: 12px !important;
 }
 
-/* 3. ГЛАВНЫЙ СТИЛЬ БЛОКА КОДА (перекрывает всё) */
+
 .code-block,
 .feedback__explanation .code-block,
 .explanation-block .code-block {
@@ -615,31 +621,6 @@ body {
     border-radius: 3px;
 }
 
-/* Инлайн-код (внутри текста и шагов) */
-.code-inline {
-    background: #e6e6e6;  /* Светло-синий */
-    color: #555;          /* Тёмно-серый */
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 0.95em;
-    white-space: nowrap;  /* Не переносить на новую строку */
-}
-
-/* Блоки кода (если всё же появятся) */
-.code-block {
-    background: #234B9B;
-    color: #666;
-    padding: 16px;
-    border-radius: 6px;
-    margin: 12px 0;
-    overflow-x: auto;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 0.9em;
-    line-height: 1.6;
-    border: none;
-}
-
 /* 🔹 Прогресс-бар на карточке темы */
 .topic-card__progress {
     height: 4px;
@@ -667,4 +648,18 @@ body {
     color: var(--color-text-secondary);
     text-align: center;
     margin-top: 2px;
+}
+
+/* 🔹 Принудительная блокировка кнопки */
+.btn--blocked {
+    pointer-events: none !important;
+    cursor: not-allowed !important;
+    opacity: 0.6 !important;
+    user-select: none !important;
+}
+
+/* Дополнительно: блокировка для кнопки */
+#generate-btn:disabled {
+    pointer-events: none !important;
+    cursor: not-allowed !important;
 }

@@ -125,11 +125,11 @@ export async function requestExplanation(studentId, topicId, taskId) {
     return request('/task/explain', {
         method: 'POST',
         body: JSON.stringify({
-            student_id: parseInt(studentId),  // Убедись, что это число
-            topic_id: parseInt(topicId?.id || topicId),  // Извлекаем ID
-            task_id: parseInt(taskId),
-            is_correct: false,  // Обязательно для AnswerRequest
-            student_answer: ""   // Обязательно для AnswerRequest
+            student_id: Number(studentId),
+            topic_id: Number(topicId?.id || topicId),
+            task_id: Number(taskId),
+            is_correct: false,
+            student_answer: ""
         }),
     });
 }

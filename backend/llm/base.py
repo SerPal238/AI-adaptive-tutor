@@ -25,18 +25,16 @@ class TaskOutput(BaseModel):
 
 
 class LLMProvider(ABC):
-    """Абстрактный класс-интерфейс для всех LLM-клиентов"""
-
     @abstractmethod
     async def generate_task(self, prompt: str, config: LLMConfig) -> TaskOutput:
-        """
-        Генерирует задание по промпту.
+        pass
 
-        Args:
-            prompt: текст запроса с инструкциями
-            config: параметры генерации (модель, температура и т.д.)
+    @abstractmethod
+    async def verify_answer(self, prompt: str, config: LLMConfig) -> dict:
+        """Проверяет ответ студента"""
+        pass
 
-        Returns:
-            TaskOutput: валидированный объект с заданием
-        """
+    @abstractmethod
+    async def explain_task(self, prompt: str, config: LLMConfig) -> dict:
+        """Генерирует подробное объяснение"""
         pass

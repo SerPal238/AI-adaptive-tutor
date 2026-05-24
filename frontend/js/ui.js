@@ -149,17 +149,6 @@ export function renderTask(task, topicName) {
         console.log('✅ Заголовок обновлён:', heading.textContent);
     }
 
-    // Обновляем мета-информацию
-    const difficultyEl = document.getElementById('task-difficulty');
-    const masteryEl = document.getElementById('task-mastery');
-
-    if (difficultyEl) {
-        difficultyEl.textContent = CONFIG.texts.difficulty[task.difficulty] || task.difficulty;
-    }
-    if (masteryEl) {
-        masteryEl.textContent = `Mastery: ${task.mastery_level?.toFixed(2) || '0.0'}`;
-    }
-
     // Обновляем вопрос
     const questionEl = document.getElementById('task-question');
     if (questionEl) {
@@ -181,7 +170,11 @@ export function renderTask(task, topicName) {
     const explainBtn = document.getElementById('explain-btn');
 
     if (checkBtn) checkBtn.disabled = true;
-    if (explainBtn) explainBtn.hidden = true;
+    if (explainBtn) {
+        explainBtn.hidden = false;  // 🔹 ИСПРАВЛЕНО: было true (кнопка никогда не показывалась!)
+        explainBtn.disabled = false; // 🔹 ИСПРАВЛЕНО: разблокируем для нового задания
+        explainBtn.textContent = '💡 Объяснить решение'; // Возвращаем исходный текст
+    }
 
     // Скрываем фидбек
     const feedback = document.getElementById('feedback');
@@ -287,8 +280,7 @@ export function resetTaskView() {
     const placeholder = document.getElementById('task-placeholder');
     const taskContent = document.getElementById('task-content');
     const feedback = document.getElementById('feedback');
-    const generateBtn = document.getElementById('generate-btn');
-    const nextTaskBtn = document.getElementById('next-task-btn');
+    const generateBtn = document.getElementById('generate-btn')
     const taskQuestion = document.getElementById('task-question');
     const optionsContainer = document.getElementById('options-container');
 
@@ -297,7 +289,6 @@ export function resetTaskView() {
     if (taskContent) taskContent.hidden = true;
     if (feedback) feedback.hidden = true;
     if (generateBtn) generateBtn.disabled = false;
-    if (nextTaskBtn) nextTaskBtn.hidden = true;
     if (taskQuestion) taskQuestion.textContent = '';
     if (optionsContainer) optionsContainer.innerHTML = '';
 }

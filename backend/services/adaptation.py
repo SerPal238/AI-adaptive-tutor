@@ -5,7 +5,9 @@
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from db.models import TopicMastery
-from datetime import datetime
+from datetime import datetime, timezone
+
+
 # ─────────────────────────────────────────────────────────────
 # 🔹 Пороги сложности (твои значения)
 # ─────────────────────────────────────────────────────────────
@@ -53,7 +55,7 @@ async def update_mastery(session: AsyncSession, student_id: int, topic_id: int, 
         mastery.mastery_level -= 0.1
 
     mastery.mastery_level = max(0.0, min(1.0, mastery.mastery_level))
-    mastery.updated_at = datetime.utcnow()
+    mastery.updated_at = datetime.now(timezone.utc)
 
     await session.commit()
     await session.refresh(mastery)

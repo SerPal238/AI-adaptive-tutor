@@ -1,8 +1,10 @@
 import networkx as nx
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-from db.models import Topic
+from db.models import Topic, TopicPrerequisite
+import logging
 
+logger = logging.getLogger(__name__)
 
 class KnowledgeGraphManager:
     def __init__(self):
@@ -23,9 +25,7 @@ class KnowledgeGraphManager:
         topics = result.all()
 
         if not topics:
-            # Если БД пуста — создаём дефолтные темы (seed)
             await self._seed_default_topics(session)
-            # Рекурсивно перезагружаем граф уже с данными
             return await self.load_from_db(session)
 
         # 2. Добавляем узлы (темы) в граф
@@ -33,49 +33,60 @@ class KnowledgeGraphManager:
             self.graph.add_node(
                 topic.id,
                 name=topic.name,
-                subject=topic.subject,
-                difficulty=3  # Можно добавить поле difficulty в модель Topic
+                subject=topic.subject
             )
 
-        # 3. Добавляем рёбра (зависимости) на основе prerequisites
-        for topic in topics:
-            if topic.prerequisites:
-                # Ожидаем формат: "1,3,5" → строка с ID через запятую
-                try:
-                    prereq_ids = [int(x.strip()) for x in topic.prerequisites.split(',') if x.strip()]
-                    for prereq_id in prereq_ids:
-                        # Добавляем ребро: prereq_id → topic.id
-                        # (чтобы изучить topic.id, нужно пройти prereq_id)
-                        if self.graph.has_node(prereq_id):
-                            self.graph.add_edge(prereq_id, topic.id)
-                except (ValueError, AttributeError) as e:
-                    print(f"⚠️ Ошибка парсинга prerequisites для темы {topic.id}: {e}")
+        # 🔹 3. НОВОЕ: Загружаем все связи prerequisites одной выборкой
+        prereq_stmt = select(TopicPrerequisite)
+        prereq_result = await session.exec(prereq_stmt)
+        links = prereq_result.all()
+
+        # 4. Добавляем рёбра в граф
+        for link in links:
+            if self.graph.has_node(link.prerequisite_id) and self.graph.has_node(link.topic_id):
+                self.graph.add_edge(link.prerequisite_id, link.topic_id)
 
         self._is_loaded = True
-        print(f"✅ Граф знаний загружен: {len(self.graph.nodes())} тем, {len(self.graph.edges())} связей")
+        logger.info(f"✅ Граф знаний загружен: {len(self.graph.nodes())} тем, {len(self.graph.edges())} связей")
 
     async def _seed_default_topics(self, session: AsyncSession):
         """
-        Создаёт начальные темы, если БД пуста.
+        Создаёт начальные темы и связи между ними.
         Запускается автоматически при первом старте.
         """
+        # 1. Определяем темы
         default_topics = [
-            Topic(id=1, name="Введение в Python", subject="Программирование", prerequisites=""),
-            Topic(id=2, name="Переменные и типы данных", subject="Программирование", prerequisites="1"),
-            Topic(id=3, name="Циклы", subject="Программирование", prerequisites="2"),
-            Topic(id=4, name="Функции", subject="Программирование", prerequisites="3"),
-            Topic(id=5, name="ООП", subject="Программирование", prerequisites="4"),
-
+            Topic(id=1, name="Введение в Python", subject="Программирование"),
+            Topic(id=2, name="Переменные и типы данных", subject="Программирование"),
+            Topic(id=3, name="Циклы", subject="Программирование"),
+            Topic(id=4, name="Функции", subject="Программирование"),
+            Topic(id=5, name="ООП", subject="Программирование"),
         ]
 
+        # 2. Добавляем темы (если их ещё нет)
         for t in default_topics:
-            # Проверяем, нет ли уже такой темы (защита от дублей при перезапуске)
             existing = await session.get(Topic, t.id)
             if not existing:
                 session.add(t)
+        await session.commit()
+
+        # 3. Определяем связи prerequisites
+        # (topic_id, prerequisite_id) — "чтобы изучить topic_id, нужно пройти prerequisite_id"
+        default_prereqs = [
+            (2, 1),  # Переменные требуют Введение
+            (3, 2),  # Циклы требуют Переменные
+            (4, 3),  # Функции требуют Циклы
+            (5, 4),  # ООП требует Функции
+        ]
+
+        # 4. Создаём связи (если их ещё нет)
+        for topic_id, prereq_id in default_prereqs:
+            existing = await session.get(TopicPrerequisite, (topic_id, prereq_id))
+            if not existing:
+                session.add(TopicPrerequisite(topic_id=topic_id, prerequisite_id=prereq_id))
 
         await session.commit()
-        print("Созданы дефолтные темы в БД")
+        logger.info("✅ Созданы дефолтные темы и связи в БД")
 
     # ─────────────────────────────────────────────────────────────
     # 🔹 Синхронные методы (работают с уже загруженным в память графом)

@@ -1,122 +1,30 @@
 # backend/services/task_service.py
 import ast
-import httpx
 import json
 import re
 from sqlmodel import select
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel.ext.asyncio.session import AsyncSession
 from db.models import GeneratedTask, TopicMastery, Attempt
 from llm.base import LLMProvider, LLMConfig, TaskOutput
 from services.adaptation import get_or_create_mastery, mastery_to_difficulty, update_mastery
 from pathlib import Path
 SYLLABUS_PATH = Path(__file__).parent.parent / "topic_syllabus.json"
+import logging
+
+logger = logging.getLogger(__name__)
+
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+TASK_PROMPT = (PROMPTS_DIR / "task_generation.txt").read_text(encoding="utf-8")
+VERIFY_PROMPT = (PROMPTS_DIR / "verify_answer.txt").read_text(encoding="utf-8")
 
 try:
     with open(SYLLABUS_PATH, "r", encoding="utf-8") as f:
         TOPIC_SYLLABUS = json.load(f)
-    print(f"✅ Syllabus загружен: {len(TOPIC_SYLLABUS)} тем")
+    logger.info(f"✅ Syllabus загружен: {len(TOPIC_SYLLABUS)} тем")
 except FileNotFoundError:
-    print(f"⚠️ Файл syllabus не найден: {SYLLABUS_PATH}")
+    logger.info(f"⚠️ Файл syllabus не найден: {SYLLABUS_PATH}")
     TOPIC_SYLLABUS = {}
-
-TASK_PROMPT = """Ты — персональный репетитор по Python. Сгенерируй УЧЕБНОЕ ЗАДАНИЕ, строго соответствующее текущему этапу изучения темы.
-
- КОНТЕКСТ:
-Тема: {topic}
-Описание: {topic_description}
-Текущий этап: {stage_name}
-Фокус этапа: {stage_focus}
-
- СТРОГИЕ ПРАВИЛА:
-1. РАЗРЕШЕНО использовать ТОЛЬКО: {allowed_constructs}
-2. ЗАПРЕЩЕНО использовать: {banned_constructs}
-3. Задание должно быть КРАТКИМ (1-3 предложения). Тренируй ТОЛЬКО фокус этапа.
-4. НЕ усложняй задание. Если этап "basic_print", давай задания только на print().
-5. НЕ повторяй задания из истории.
-6. expected_answer должен быть РАБОЧИМ, лаконичным кодом.
-7. explanation — краткая подсказка (1 предложение), а не решение.
-
- КОНТЕКСТ ТЬЮТОРА (учти, но НЕ упоминай в тексте задания):
-{tutor_context_block}
-
- ИСТОРИЯ (НЕ ПОВТОРЯЙ):
-{history_block}
-
- ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON (без markdown, без лишних слов):
-{{
-  "question": "Текст задания",
-  "expected_answer": "Корректный Python-код",
-  "answer_type": "code",
-  "explanation": "Краткое пояснение концепции"
-}}"""
-
-VERIFY_PROMPT = """ТВОЯ ЕДИНСТВЕННАЯ ЗАДАЧА: проверить ЛОГИКУ решения, а не синтаксис!
-
-КРИТИЧЕСКИ ВАЖНО:
-Синтаксис УЖЕ проверен и корректен. НЕ ПРОВЕРЯЙ синтаксические детали!
-
-КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ОТВЕРГАТЬ КОД ИЗ-ЗА:
-1. КАВЫЧКИ — 'text' И "text" АБСОЛЮТНО ЭКВИВАЛЕНТНЫ В PYTHON!
-   ✅ print('Hello') = print("Hello") — ОДИНАКОВО ВЕРНО
-   ✅ name = "John" = name = 'John' — РАЗНИЦЫ НЕТ
-
-2. ПРОБЕЛЫ И ОТСТУПЫ:
-   print(x,y) = print(x, y) = print( x , y )
-
-3. ИМЕНА ПЕРЕМЕННЫХ:
-   x = 5 = a = 5 = my_var = 5
-
-ПРОВЕРЯЙ ТОЛЬКО ЛОГИКУ:
-1. Использует ли код НУЖНЫЕ функции (print, input и т.д.)?
-2. Правильная ли АЛГОРИТМИЧЕСКАЯ логика?
-3. Даст ли код ПРАВИЛЬНЫЙ РЕЗУЛЬТАТ при выполнении?
-
-ЗАДАНИЕ:
-{question}
-
-ОЖИДАЕМЫЙ ОТВЕТ (для понимания логики, не для сравнения синтаксиса!):
-{expected_answer}
-
-ОТВЕТ СТУДЕНТА:
-{student_answer}
-
-📤 ОТВЕТЬ СТРОГО В JSON ФОРМАТЕ:
-{{
-  "is_correct": true/false,
-  "explanation": "Краткое объяснение на русском. Если неправильно — объясни ЧТО НЕ ТАК С ЛОГИКОЙ, не с синтаксисом!",
-  "weakness": "конкретная_концепция ИЛИ 'none'"
-}}
-
-ПРИМЕРЫ ПРОВЕРКИ:
-
-ПРИМЕР 1:
-Задание: "Выведите 'Учимся программировать на Python!'"
-Эталон: print('Учимся программировать на Python!')
-Студент: print("Учимся программировать на Python")
-is_correct: true
-explanation: "Код верный! Использует print() правильно."
-weakness: "none"
-
-ПРИМЕР 2:
-Задание: "Сложите два числа"
-Эталон: print(a + b)
-Студент: print(b + a)
-is_correct: true
-explanation: "Логика верная, сложение коммутативно."
-weakness: "none"
-
-ПРИМЕР 3:
-Задание: "Выведите Hello"
-Эталон: print('Hello')
-Студент: input('Hello')
-is_correct: false
-explanation: "Нужно использовать print(), а не input()"
-weakness: "wrong_function"
-
-ПРОВЕРЬ КОД СТУДЕНТА (игнорируя кавычки и пробелы!):
-"""
-
 
 # 🔹 Функция выбора этапа (ВНЕ класса, с НУЛЕВЫМ отступом!)
 def get_current_stage(topic_name: str, mastery_level: float) -> dict:
@@ -142,22 +50,8 @@ class TaskGenerationService:
         self.session = session
 
     async def generate_adaptive_task(self, student_id: int, topic_id: int, topic_name: str) -> dict:
-        # 1. Получаем/создаём запись mastery
-        stmt = select(TopicMastery).where(
-            TopicMastery.student_id == student_id,
-            TopicMastery.topic_id == topic_id
-        )
-        result = await self.session.exec(stmt)
-        mastery = result.first()
-
-        if not mastery:
-            mastery = TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0)
-            self.session.add(mastery)
-            await self.session.commit()
-            await self.session.refresh(mastery)
-
+        mastery = await get_or_create_mastery(self.session, student_id, topic_id)
         mastery_level = mastery.mastery_level
-
         # 🔹 ОПРЕДЕЛЯЕМ ТЕКУЩИЙ ЭТАП ПО SYLLABUS
         stage = get_current_stage(topic_name, mastery_level)
         stage_name = stage["name"]
@@ -200,10 +94,11 @@ class TaskGenerationService:
         history_tasks = (await self.session.exec(history_stmt)).all()
         history_block = ""
         if history_tasks:
-            history_block = " РАНЕЕ ДАВАЛИСЬ:\n" + "\n".join(
-                f"{i}. {json.loads(t.content_json).get('question', '')}"
-                for i, t in enumerate(history_tasks, 1)
-            )
+            history_block = " РАНЕЕ ДАВАЛИСЬ:\n"
+            for i, t in enumerate(history_tasks, 1):
+                # t.content уже словарь (JSON-колонка), парсить не нужно
+                question = t.content.get('question', '[вопрос недоступен]') if t.content else '[вопрос недоступен]'
+                history_block += f"{i}. {question}\n"
 
         # Экранирование фигурных скобок для .format()
         ctx_escaped = tutor_context.replace("{", "{{").replace("}", "}}")
@@ -225,10 +120,15 @@ class TaskGenerationService:
         config = LLMConfig(temperature=0.5, max_tokens=800)
         try:
             task_output = await self.llm.generate_task(prompt, config)
-            # Безопасное извлечение данных (поддержка и Pydantic, и dict)
-            task_data = task_output.model_dump() if hasattr(task_output, "model_dump") else task_output
+
+            # 🔹 Защита от None
+            if task_output is None:
+                raise RuntimeError("LLM вернул None вместо TaskOutput")
+
+            # Извлекаем данные (Pydantic модель → dict)
+            task_data = task_output.model_dump()
         except Exception as e:
-            print(f"❌ Ошибка генерации задания: {e}")
+            logger.error(f"❌ Ошибка генерации задания: {e}")
             raise
 
         # 7. Сохраняем задание
@@ -236,8 +136,8 @@ class TaskGenerationService:
             student_id=student_id,
             topic_id=topic_id,
             difficulty=difficulty,
-            content_json=json.dumps(task_data),
-            created_at=datetime.utcnow()
+            content=task_data,
+            created_at=datetime.now(timezone.utc)
         )
         self.session.add(generated)
         await self.session.commit()
@@ -311,36 +211,47 @@ class TaskGenerationService:
 
     @staticmethod
     def _normalize_python_code(code: str) -> str:
-        """
-        Минимальная безопасная нормализация кода.
-        НЕ меняет структуру — только косметические различия.
-        """
         if not code or not code.strip():
             return code
 
-        # 1. Табы → 4 пробела
-        code = code.replace('\t', '    ')
+        try:
+            # Парсим и восстанавливаем код — это безопасно нормализует его
+            tree = ast.parse(code)
+            normalized = ast.unparse(tree)  # Python 3.9+
+            return normalized
+        except SyntaxError:
+            # Если код битый — возвращаем как есть (ошибка поймается позже)
+            return code
 
-        # 2. Убираем BOM и лишние переносы в начале/конце
-        code = code.strip()
+    @staticmethod
+    def _extract_json(text: str) -> dict:
+        """
+        Извлекает валидный JSON из текста, который может содержать:
+        - markdown-обёртки ```json ... ```
+        - пояснения до/после JSON
+        - лишние пробелы и символы
+        """
+        if not text:
+            raise ValueError("Пустой ответ от LLM")
 
-        # 3. Нормализуем пустые строки (не более 2 подряд)
-        code = re.sub(r'\n\s*\n\s*\n', '\n\n', code)
+        # 1. Убираем markdown-обёртки ```json ... ```
+        # Ищем блок между ``` и ```
+        match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', text)
+        if match:
+            json_str = match.group(1)
+        else:
+            # 2. Если нет обёрток — ищем первую { и последнюю }
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                json_str = text[start:end + 1]
+            else:
+                raise ValueError(f"Не удалось найти JSON в ответе: {text[:200]}")
 
-        # 4. Убираем пробелы перед запятыми/точкой с запятой
-        code = re.sub(r'\s+,', ',', code)
-        code = re.sub(r'\s+;', ';', code)
+        # 3. Парсим JSON
+        return json.loads(json_str)
 
-        # 5. Нормализуем пробелы вокруг операторов (опционально)
-        # code = re.sub(r'\s*=\s*', ' = ', code)  # осторожно: может сломать ==
-
-        # 6. Гарантируем перенос в конце
-        if not code.endswith('\n'):
-            code += '\n'
-
-        return code
-
-    async def verify_student_answer(self, question: str, expected_answer: str, student_answer: str) -> dict:
+    async def verify_student_answer(self, question: str, expected_answer: str, student_answer: str, answer_type: str = "code") -> dict:
         # 🔹 0. НОРМАЛИЗУЕМ код студента (кавычки, пробелы, отступы)
         normalized_student_code = self._normalize_python_code(student_answer)
 
@@ -352,11 +263,11 @@ class TaskGenerationService:
                 "weakness": "syntax_error"
             }
 
-        # 🔹 2. Проверяем, что это ОСМЫСЛЕННЫЙ код
-        if not self.is_meaningful_code(normalized_student_code):
+        # ✅ Проверяем осмысленность только для типа "code"
+        if answer_type == "code" and not self.is_meaningful_code(normalized_student_code):
             return {
                 "is_correct": False,
-                "explanation": "⚠️ Это не программа. Напишите код с использованием функций (input, print) и логики (if, переменные).",
+                "explanation": "⚠️ Это не программа. Напишите код с использованием функций.",
                 "weakness": "not_code"
             }
 
@@ -366,59 +277,42 @@ class TaskGenerationService:
             expected_answer=expected_answer,
             student_answer=normalized_student_code
         )
+        config = LLMConfig(temperature=0.1, max_tokens=512)
+        # 🔹 Вызываем LLM через единый клиент
+        raw_response = await self.llm._call_ollama(prompt, config)
+        logger.debug(f"📡 Сырой ответ LLM: {raw_response[:500]}...")
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "qwen2.5:7b",
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.1, "num_predict": 512}
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
+        try:
+            llm_json = self._extract_json(raw_response)
 
-            # 🔹 ОТЛАДКА: печатаем сырой ответ
-            print(f"📡 Сырой ответ LLM: {data.get('response')[:200]}...")
+            # Гарантируем нужные поля
+            weakness = llm_json.get("weakness") or "none"
+            if str(weakness).lower().strip() in ("none", "null", ""):
+                weakness = "none"
 
-            try:
-                llm_json = json.loads(data["response"])
+            logger.info(f"✅ is_correct: {llm_json.get('is_correct')}")
+            logger.info(f"💬 weakness: {weakness}")
 
-                # 🔹 Гарантируем weakness (если null или отсутствует → 'none')
-                weakness = llm_json.get("weakness")
-                if weakness is None or weakness == "":
-                    weakness = "none"
+            return {
+                "is_correct": llm_json.get("is_correct", False),
+                "explanation": llm_json.get("explanation", "Объяснение не предоставлено"),
+                "weakness": weakness
+            }
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка парсинга ответа LLM: {e}")
+            logger.warning(f"Raw: {raw_response[:500]}")
+            return {
+                "is_correct": False,
+                "explanation": f"Ошибка проверки ответа: {str(e)}",
+                "weakness": "parse_error"
+            }
 
-                print(f"✅ is_correct: {llm_json.get('is_correct')}")
-                print(f"💬 weakness: {weakness}")
-
-                return {
-                    "is_correct": llm_json.get("is_correct", False),
-                    "explanation": llm_json.get("explanation", "Объяснение не предоставлено"),
-                    "weakness": weakness  # ← Теперь точно не None
-                }
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"⚠️ Ошибка парсинга: {e}")
-                return {
-                    "is_correct": False,
-                    "explanation": "Ошибка проверки",
-                    "weakness": "parse_error"
-                }
-
-
-    async def generate_detailed_explanation(
-        self,
-        question: str,
-        expected_answer: str,
-        student_id: int,
-        topic_id: int
+    async def generate_detailed_explanation(self,
+    question: str,
+    expected_answer: str,
+    student_id: int,
+    topic_id: int
     ) -> dict:
-        """
-        Генерирует подробное пошаговое объяснение решения
-        """
         prompt = f"""Ты — терпеливый репетитор по Python. Объясни решение задачи ПОДРОБНО и ПОШАГОВО.
     
     ЗАДАНИЕ:
@@ -449,32 +343,21 @@ class TaskGenerationService:
     }}
     
     Будь максимально понятным и дружелюбным. Используй примеры."""
+        config = LLMConfig(temperature=0.3, max_tokens=1024)
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "qwen2.5:7b",
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.3, "num_predict": 1024}
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            try:
-                explanation = json.loads(data["response"])
-                return {
-                    "main_explanation": explanation.get("main_explanation", "Объяснение недоступно"),
-                    "steps": explanation.get("steps", []),
-                    "hints": explanation.get("hints", [])
-                }
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"⚠️ Ошибка парсинга объяснения: {e}")
-                return {
-                    "main_explanation": data.get("response", "Не удалось сгенерировать объяснение"),
-                    "steps": [],
-                    "hints": []
-                }
+        try:
+            # 🔹 Вызываем LLM через единый клиент
+            raw_response = await self.llm._call_ollama(prompt, config)
+            explanation = self._extract_json(raw_response)
+            return {
+                "main_explanation": explanation.get("main_explanation", "Объяснение недоступно"),
+                "steps": explanation.get("steps", []),
+                "hints": explanation.get("hints", [])
+            }
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка парсинга объяснения: {e}")
+            return {
+                "main_explanation": "Не удалось сгенерировать объяснение",
+                "steps": [],
+                "hints": []
+            }

@@ -1,11 +1,15 @@
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from db.models import Student, TopicMastery, Attempt, Topic
-from services.adaptation import mastery_to_difficulty, DIFFICULTY_THRESHOLDS
+from services.adaptation import mastery_to_difficulty, calculate_mastery_delta, clamp_mastery
 from knowledge_graph import graph_manager
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+import logging
 
+logger = logging.getLogger(__name__)
+
+WEAKNESS_CLEAR_THRESHOLD = 3
 
 # ─────────────────────────────────────────────────────────────
 # 🔹 get_student → async
@@ -24,100 +28,6 @@ async def get_or_create_student(session: AsyncSession, student_id: int, name: st
         await session.commit()
         await session.refresh(student)
     return student
-
-
-# ─────────────────────────────────────────────────────────────
-# 🔹 analyze_answer → async (логика +0.2 / -0.1)
-# ─────────────────────────────────────────────────────────────
-async def analyze_answer(
-        session: AsyncSession,
-        student_id: int,
-        topic_id: int,
-        is_correct: bool,
-        llm_feedback: dict | None = None
-) -> dict:
-    student = await get_student(session, student_id)
-    if not student:
-        return {"error": "Student not found"}
-
-    # Получаем или создаём mastery
-    stmt = select(TopicMastery).where(
-        TopicMastery.student_id == student_id,
-        TopicMastery.topic_id == topic_id
-    )
-    result = await session.exec(stmt)
-    mastery_record = result.first()
-
-    if not mastery_record:
-        mastery_record = TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0)
-        session.add(mastery_record)
-
-    current_mastery = mastery_record.mastery_level
-    delta = 0.2 if is_correct else -0.1
-    new_mastery = max(0.0, min(1.0, current_mastery + delta))
-    mastery_record.mastery_level = new_mastery
-
-    # 🔹 1. Обновляем список слабых мест
-    if llm_feedback:
-        weakness = llm_feedback.get("weakness")
-
-        # 🔹 Проверяем на None, "none", "None" (регистронезависимо)
-        if weakness and str(weakness).lower().strip() != "none":
-            current_weaknesses = mastery_record.identified_weaknesses or []
-            if weakness not in current_weaknesses:
-                current_weaknesses.append(weakness)
-            mastery_record.identified_weaknesses = current_weaknesses
-            print(f"💾 Сохранена слабость: {weakness}")
-        else:
-            print(f"ℹ️ Weakness = 'none', не сохраняем")
-
-        if "preferred_hint_style" in llm_feedback:
-            mastery_record.preferred_hint_style = llm_feedback["preferred_hint_style"]
-
-    # 🔹 2. Обновляем время и стрик
-    mastery_record.last_practiced = datetime.utcnow()
-    mastery_record.practice_streak = (mastery_record.practice_streak or 0) + 1
-
-    # 🔹 3. СОЗДАЁМ ЗАПИСЬ В ЖУРНАЛЕ ПОПЫТОК (Attempt)
-    # Это нужно, чтобы хранить историю каждой проверки
-    attempt = Attempt(
-        student_id=student_id,
-        topic_id=topic_id,
-        is_correct=is_correct,
-        # Сохраняем weakness из LLM, если есть
-        weakness=llm_feedback.get("weakness") if llm_feedback else None,
-        completed_at=datetime.utcnow()
-    )
-    session.add(attempt)
-
-    # 🔹 Логика стрика правильных ответов
-    if is_correct:
-        mastery_record.correct_streak = (mastery_record.correct_streak or 0) + 1
-    else:
-        mastery_record.correct_streak = 0  # Сброс при ошибке
-
-    # 🔹 Автоматическая очистка слабостей после 3 верных ответов подряд
-    if mastery_record.correct_streak >= 3 and mastery_record.identified_weaknesses:
-        print(f"🧹 Студент ответил верно 3 раза подряд. Слабости усвоены, очищаю профиль.")
-        mastery_record.identified_weaknesses = []
-        mastery_record.correct_streak = 0  # Сброс счётчика после очистки
-
-    was_mastered = new_mastery >= 1.0
-    unlocked_new = was_mastered and current_mastery < 1.0
-
-    await session.commit()
-    await session.refresh(mastery_record)
-
-    return {
-        "status": "completed" if was_mastered else "in_progress",
-        "new_mastery_level": round(new_mastery, 2),
-        "unlocked": unlocked_new,
-        "difficulty_next": mastery_to_difficulty(new_mastery),
-        "weaknesses": mastery_record.identified_weaknesses or [],
-        "hint_style": mastery_record.preferred_hint_style,
-        "streak": mastery_record.practice_streak
-    }
-
 
 # ─────────────────────────────────────────────────────────────
 # 🔹 update_gamification → async (XP + уровни)
@@ -208,4 +118,132 @@ async def get_student_full_status(session: AsyncSession, student_id: int) -> dic
         "mastery_scores": mastery_scores,
         "mastered_topics": mastered_topics,
         "unlocked_topics": unlocked
+    }
+async def register_attempt(
+    session: AsyncSession,
+    student_id: int,
+    topic_id: int,
+    is_correct: bool,
+    llm_feedback: dict | None = None,
+    is_explanation: bool = False  # флаг "использовал подсказку"
+) -> dict:
+    student = await get_student(session, student_id)
+    if not student:
+        return {"error": "Student not found"}
+
+    # Получаем или создаём mastery
+    stmt = select(TopicMastery).where(
+        TopicMastery.student_id == student_id,
+        TopicMastery.topic_id == topic_id
+    )
+    result = await session.exec(stmt)
+    mastery_record = result.first()
+
+    if not mastery_record:
+        mastery_record = TopicMastery(student_id=student_id, topic_id=topic_id, mastery_level=0.0)
+        session.add(mastery_record)
+
+    current_mastery = mastery_record.mastery_level
+
+    # 🔹 ОСОБАЯ ЛОГИКА ДЛЯ ОБЪЯСНЕНИЙ
+    if is_explanation:
+        # Снижаем mastery (наказание за "сдачу")
+        delta = calculate_mastery_delta(False)  # как за неверный ответ
+        new_mastery = clamp_mastery(current_mastery + delta)
+        mastery_record.mastery_level = new_mastery
+
+        # 🔹 СБРАСЫВАЕМ correct_streak (он больше не "в потоке" правильных ответов)
+        mastery_record.correct_streak = 0
+
+        # 🔹 Записываем в историю попыток с особой меткой
+        attempt = Attempt(
+            student_id=student_id,
+            topic_id=topic_id,
+            is_correct=False,
+            weakness="used_explanation",  # 🔹 Особая метка для аналитики
+            completed_at=datetime.now(timezone.utc)
+        )
+        session.add(attempt)
+
+        mastery_record.last_practiced = datetime.now(timezone.utc)
+        # ⚠️ НЕ увеличиваем practice_streak — это не полноценная практика
+        # ⚠️ НЕ трогаем identified_weaknesses — студент не отвечал
+
+        await session.commit()
+        await session.refresh(mastery_record)
+
+        return {
+            "status": "explanation_used",  # 🔹 Особый статус
+            "new_mastery_level": round(new_mastery, 2),
+            "unlocked": False,
+            "difficulty_next": mastery_to_difficulty(new_mastery),
+            "weaknesses": mastery_record.identified_weaknesses or [],
+            "hint_style": mastery_record.preferred_hint_style,
+            "streak": mastery_record.practice_streak
+        }
+
+    delta = calculate_mastery_delta(is_correct)
+    new_mastery = clamp_mastery(current_mastery + delta)
+    mastery_record.mastery_level = new_mastery
+
+
+    # 🔹 1. Обновляем список слабых мест
+    if llm_feedback:
+        weakness = llm_feedback.get("weakness")
+
+        # 🔹 Проверяем на None, "none", "None" (регистронезависимо)
+        if weakness and str(weakness).lower().strip() != "none":
+            current_weaknesses = mastery_record.identified_weaknesses or []
+            if weakness not in current_weaknesses:
+                current_weaknesses.append(weakness)
+            mastery_record.identified_weaknesses = current_weaknesses
+            logger.info(f"💾 Сохранена слабость: {weakness}")
+        else:
+            logger.info(f"ℹ️ Weakness = 'none', не сохраняем")
+
+        if "preferred_hint_style" in llm_feedback:
+            mastery_record.preferred_hint_style = llm_feedback["preferred_hint_style"]
+
+    # 🔹 2. Обновляем время и стрик
+    mastery_record.last_practiced = datetime.now(timezone.utc)
+    mastery_record.practice_streak = (mastery_record.practice_streak or 0) + 1
+
+    # 🔹 3. СОЗДАЁМ ЗАПИСЬ В ЖУРНАЛЕ ПОПЫТОК (Attempt)
+    # Это нужно, чтобы хранить историю каждой проверки
+    attempt = Attempt(
+        student_id=student_id,
+        topic_id=topic_id,
+        is_correct=is_correct,
+        # Сохраняем weakness из LLM, если есть
+        weakness=llm_feedback.get("weakness") if llm_feedback else None,
+        completed_at=datetime.now(timezone.utc)
+    )
+    session.add(attempt)
+
+    # 🔹 Логика стрика правильных ответов
+    if is_correct:
+        mastery_record.correct_streak = (mastery_record.correct_streak or 0) + 1
+    else:
+        mastery_record.correct_streak = 0  # Сброс при ошибке
+
+    # 🔹 Автоматическая очистка слабостей после 3 верных ответов подряд
+    if mastery_record.correct_streak >= WEAKNESS_CLEAR_THRESHOLD and mastery_record.identified_weaknesses:
+        logger.info(f"🧹 Студент ответил верно 3 раза подряд. Слабости усвоены, очищаю профиль.")
+        mastery_record.identified_weaknesses = []
+        mastery_record.correct_streak = 0  # Сброс счётчика после очистки
+
+    was_mastered = new_mastery >= 1.0
+    unlocked_new = was_mastered and current_mastery < 1.0
+
+    await session.commit()
+    await session.refresh(mastery_record)
+
+    return {
+        "status": "completed" if was_mastered else "in_progress",
+        "new_mastery_level": round(new_mastery, 2),
+        "unlocked": unlocked_new,
+        "difficulty_next": mastery_to_difficulty(new_mastery),
+        "weaknesses": mastery_record.identified_weaknesses or [],
+        "hint_style": mastery_record.preferred_hint_style,
+        "streak": mastery_record.practice_streak
     }

@@ -15,6 +15,48 @@ const state = {
     isSubmitted: false,
 };
 
+// ===== УТИЛИТЫ =====
+/**
+ * 🔄 Обновить весь UI студента после действия, изменившего его состояние.
+ * Используется после проверки ответа, объяснения и т.п.
+ * НЕ использовать при первичной загрузке или смене студента — там loadStudentData().
+ */
+async function refreshStudentUI() {
+    console.log('🔄 Обновляем UI студента...');
+    return await loadStudentData();
+}
+
+function unlockGenerateButton() {
+    const generateBtn = document.getElementById('generate-btn');
+    if (generateBtn) {
+        generateBtn.disabled = false;
+        generateBtn.classList.remove('btn--blocked');
+        generateBtn.style.pointerEvents = '';
+        generateBtn.style.cursor = '';
+        generateBtn.textContent = '🤖 Сгенерировать следующее задание';
+    }
+}
+/**
+ * Получить человекочитаемое название темы
+ * @param {Object|string|number} topic - Объект темы или ID
+ * @param {Object} options - Настройки fallback
+ * @param {string} [options.prefix='Тема #'] - Префикс для ID (не используется, если asIs=true)
+ * @param {boolean} [options.asIs=false] - Если true, prefix вернётся как готовая строка
+ * @returns {string}
+ */
+function getTopicName(topic, { prefix = 'Тема #', asIs = false } = {}) {
+    if (!topic) return asIs ? prefix : `${prefix}?`;
+
+    if (topic.name) return topic.name;
+    if (topic.title) return topic.title;
+
+    // Fallback
+    if (asIs) return prefix;
+
+    const id = topic.id ?? topic;
+    return `${prefix}${id}`;
+}
+
 // 🔹 НОВОЕ: Загрузить список студентов и наполнить селект
 async function loadStudentsList() {
     try {
@@ -108,7 +150,7 @@ async function loadStudentData() {
 async function handleTopicSelect(topic) {
     // 🔹 Поддержка: если передали только ID (старый код), ищем имя в графе
     const topicId = topic.id || topic;
-    const topicName = topic.name || topic.title || `Тема #${topicId}`;
+    const topicName = getTopicName(topic);
 
     console.log(' Выбрана тема:', topicName, '(ID:', topicId + ')');
 
@@ -155,12 +197,20 @@ async function handleGenerateTask() {
         return;
     }
 
+    // 🔹 БЛОКИРУЕМ кнопку генерации ПОЛНОСТЬЮ
+    const generateBtn = document.getElementById('generate-btn');
+    if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.classList.add('btn--blocked');  // 🔹 Добавляем класс
+        generateBtn.textContent = '⏳ Задание сгенерировано. Решите его!';
+        generateBtn.style.pointerEvents = 'none';   // 🔹 Полностью отключаем клики
+        generateBtn.style.cursor = 'not-allowed';   // 🔹 Меняем курсор
+    }
+
     UI.setLoading(true);
 
     try {
-        const topicName = state.currentTopic.name ||
-                         state.currentTopic.title ||
-                         `Тема #${state.currentTopic.id || state.currentTopic}`;
+        const topicName = getTopicName(state.currentTopic);
 
         console.log('📚 Генерируем задание для:', topicName);
         const task = await API.generateTask(state.studentId, state.currentTopic);
@@ -175,12 +225,25 @@ async function handleGenerateTask() {
             feedback.style.display = 'none';
         }
 
-        const input = document.getElementById('student-answer');
+         const input = document.getElementById('student-answer');
         if (input) {
             input.value = '';
             input.disabled = false;
             input.style.borderColor = '';
             input.style.background = '';
+        }
+
+        // РАЗБЛОКИРУЕМ КНОПКИ ДЛЯ НОВОГО ЗАДАНИЯ
+        const explainBtn = document.getElementById('explain-btn');
+        if (explainBtn) {
+            explainBtn.disabled = false;
+            explainBtn.textContent = '💡 Показать объяснение'; // Возвращаем исходный текст
+        }
+
+        const checkBtn = document.getElementById('check-answer-btn');
+        if (checkBtn) {
+            // Блокируем проверку, пока поле пустое (обработчик input сам разблокирует при вводе)
+            checkBtn.disabled = true;
         }
 
         UI.renderTask(task, topicName);
@@ -230,9 +293,14 @@ async function handleCheckAnswer() {
         return;
     }
 
-    // Блокируем интерфейс на время запроса
+    // 🔹 БЛОКИРУЕМ все кнопки на время проверки
     input.disabled = true;
-    document.getElementById('check-answer-btn').disabled = true;
+    const checkBtn = document.getElementById('check-answer-btn');
+    const explainBtn = document.getElementById('explain-btn');
+    const generateBtn = document.getElementById('generate-btn');
+
+    if (checkBtn) checkBtn.disabled = true;
+    if (explainBtn) explainBtn.disabled = true;  // 🔹 Блокируем объяснение!
 
     try {
         console.log('📤 Отправляю ответ на бэкенд для проверки LLM...');
@@ -275,10 +343,9 @@ async function handleCheckAnswer() {
         UI.announce(isCorrect ? 'Верно! Ответ принят.' : `Неверно. ${explanation}`);
 
          // 🔹 ОБНОВЛЯЕМ XP И УРОВЕНЬ
-        await loadStudentData();
-
+        await refreshStudentUI();
         state.isSubmitted = true;
-
+        unlockGenerateButton();
 
     } catch (error) {
         console.error('❌ Ошибка проверки:', error);
@@ -333,8 +400,7 @@ async function handleExplainRequest() {
         return;
     }
 
-    // 🔹 Подтверждение действия
-    const topicName = state.currentTopic.name || state.currentTopic.title || 'этой темы';
+    const topicName = getTopicName(state.currentTopic, { prefix: 'этой темы', asIs: true });
     const confirmed = confirm(
         `⚠️ Вы уверены, что хотите получить готовое объяснение?\n\n` +
         `• Ваш уровень мастерства темы "${topicName}" снизится\n` +
@@ -343,14 +409,13 @@ async function handleExplainRequest() {
         `Это поможет вам разобраться в теме, но не засчитается как выполненное задание.`
     );
 
-    if (!confirmed) {
-        return; // Пользователь отменил
-    }
+    if (!confirmed) return;
 
-    // 🔹 Блокируем интерфейс
+    // 🔹 ССЫЛКИ НА ЭЛЕМЕНТЫ (объявляем один раз)
     const input = document.getElementById('student-answer');
     const explainBtn = document.getElementById('explain-btn');
     const checkBtn = document.getElementById('check-answer-btn');
+    const generateBtn = document.getElementById('generate-btn');
 
     if (input) input.disabled = true;
     if (explainBtn) explainBtn.disabled = true;
@@ -367,14 +432,16 @@ async function handleExplainRequest() {
 
         console.log('✅ Объяснение получено:', explanation);
 
-        // 🔹 Показываем объяснение
         UI.showDetailedExplanation(
             explanation.detailed_explanation,
             explanation.step_by_step,
             explanation.hints
         );
 
-        // 🔹 Обновляем mastery (снижаем)
+        // ПЕРЕЗАГРУЖАЕМ ДАННЫЕ СТУДЕНТА ДЛЯ ОБНОВЛЕНИЯ ПРОГРЕСС-БАРА В КАРТЕ ЗНАНИЙ
+        // Это синхронизирует mastery_scores на сервере с UI карты знаний
+        await refreshStudentUI();
+
         if (explanation.new_mastery !== undefined) {
             const masteryEl = document.getElementById('task-mastery');
             if (masteryEl) {
@@ -384,15 +451,21 @@ async function handleExplainRequest() {
         }
 
         UI.announce('Объяснение показано. Изучите его и переходите к следующему заданию.');
+        unlockGenerateButton();
+        // 🔹 Блокируем кнопку объяснения (уже использовали) - ИСПРАВЛЕНО: убрано дублирование const
+        if (explainBtn) {
+            explainBtn.disabled = true;
+            explainBtn.textContent = '✅ Объяснение показано';
+        }
 
     } catch (error) {
         console.error('❌ Ошибка получения объяснения:', error);
         alert(error.message || 'Не удалось получить объяснение. Попробуйте ещё раз.');
 
-        // Разблокируем интерфейс при ошибке
         if (input) input.disabled = false;
         if (explainBtn) explainBtn.disabled = false;
         if (checkBtn) checkBtn.disabled = false;
+        unlockGenerateButton('🤖 Сгенерировать задание');
     }
 }
 

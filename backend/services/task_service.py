@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 TASK_PROMPT = (PROMPTS_DIR / "task_generation.txt").read_text(encoding="utf-8")
 VERIFY_PROMPT = (PROMPTS_DIR / "verify_answer.txt").read_text(encoding="utf-8")
+EXPLAIN_PROMPT = (PROMPTS_DIR / "detailed_explanation.txt").read_text(encoding="utf-8")
 
 try:
     with open(SYLLABUS_PATH, "r", encoding="utf-8") as f:
@@ -313,41 +314,17 @@ class TaskGenerationService:
     student_id: int,
     topic_id: int
     ) -> dict:
-        prompt = f"""Ты — терпеливый репетитор по Python. Объясни решение задачи ПОДРОБНО и ПОШАГОВО.
-    
-    ЗАДАНИЕ:
-    {question}
-    
-    ПРАВИЛЬНЫЙ ОТВЕТ:
-    {expected_answer}
-    
-    ИНСТРУКЦИИ:
-    1. Объясни, ЧТО нужно сделать в задаче (простыми словами)
-    2. Разбери решение ПОШАГОВО (каждая строка кода)
-    3. Объясни, ПОЧЕМУ это работает (концепции Python)
-    4. Дай 2-3 ПОДСКАЗКИ на будущее
-    5. Укажи на ТИПИЧНЫЕ ОШИБКИ
-    
-    Отвечай СТРОГО в формате JSON:
-    {{
-      "main_explanation": "Общее объяснение задачи (2-3 предложения)",
-      "steps": [
-        "Шаг 1: ...",
-        "Шаг 2: ...",
-        "Шаг 3: ..."
-      ],
-      "hints": [
-        "Подсказка 1",
-        "Подсказка 2"
-      ]
-    }}
-    
-    Будь максимально понятным и дружелюбным. Используй примеры."""
+        prompt = EXPLAIN_PROMPT.format(
+            question=question,
+            expected_answer=expected_answer
+        )
         config = LLMConfig(temperature=0.3, max_tokens=1024)
 
         try:
             # 🔹 Вызываем LLM через единый клиент
             raw_response = await self.llm._call_ollama(prompt, config)
+            logger.debug(f"📡 Сырой ответ LLM (explanation): {raw_response[:500]}...")
+
             explanation = self._extract_json(raw_response)
             return {
                 "main_explanation": explanation.get("main_explanation", "Объяснение недоступно"),
@@ -356,6 +333,7 @@ class TaskGenerationService:
             }
         except Exception as e:
             logger.warning(f"⚠️ Ошибка парсинга объяснения: {e}")
+            logger.warning(f"Raw response: {raw_response[:500] if 'raw_response' in locals() else 'N/A'}")
             return {
                 "main_explanation": "Не удалось сгенерировать объяснение",
                 "steps": [],
